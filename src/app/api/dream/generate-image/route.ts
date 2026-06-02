@@ -1,16 +1,5 @@
 import { NextRequest } from "next/server";
-import OpenAI from "openai";
-
-function createTextClient() {
-  const apiKey = process.env.CUSTOM_AI_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({
-    apiKey,
-    ...(process.env.CUSTOM_AI_BASE_URL
-      ? { baseURL: process.env.CUSTOM_AI_BASE_URL }
-      : {}),
-  });
-}
+import { createTextClientConfig } from "@/lib/ai-text";
 
 export async function POST(request: NextRequest) {
   const { emotion, dreamText, keywords } = await request.json();
@@ -27,11 +16,11 @@ export async function POST(request: NextRequest) {
   // Step 1：用 AI 把梦境内容润色成生图 prompt
   let imagePrompt = "";
   try {
-    const client = createTextClient();
-    if (!client) throw new Error("CUSTOM_AI_API_KEY is not configured");
+    const textConfig = createTextClientConfig();
+    if (!textConfig) throw new Error("Text model is not configured");
 
-    const result = await client.chat.completions.create({
-      model: process.env.CUSTOM_AI_MODEL ?? "gpt-5.5",
+    const result = await textConfig.client.chat.completions.create({
+      model: textConfig.model,
       messages: [
         {
           role: "system",

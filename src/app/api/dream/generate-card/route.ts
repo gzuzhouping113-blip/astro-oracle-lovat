@@ -1,16 +1,5 @@
 import { NextRequest } from "next/server";
-import OpenAI from "openai";
-
-function createTextClient() {
-  const apiKey = process.env.CUSTOM_AI_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({
-    apiKey,
-    ...(process.env.CUSTOM_AI_BASE_URL
-      ? { baseURL: process.env.CUSTOM_AI_BASE_URL }
-      : {}),
-  });
-}
+import { createTextClientConfig } from "@/lib/ai-text";
 
 export async function POST(request: NextRequest) {
   const { emotion, dreamText, keywords, mood, dream_summary } = await request.json();
@@ -24,8 +13,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "图像生成服务未配置" }, { status: 500 });
   }
 
-  const client = createTextClient();
-  if (!client) {
+  const textConfig = createTextClientConfig();
+  if (!textConfig) {
     return Response.json({ error: "文本生成服务未配置" }, { status: 500 });
   }
 
@@ -60,8 +49,8 @@ export async function POST(request: NextRequest) {
   } | null = null;
 
   try {
-    const textResult = await client.chat.completions.create({
-      model: "gpt-5.5",
+    const textResult = await textConfig.client.chat.completions.create({
+      model: textConfig.model,
       messages: [{ role: "user", content: textPrompt }],
       stream: false,
     });

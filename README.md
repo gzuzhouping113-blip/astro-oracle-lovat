@@ -17,7 +17,7 @@
 - TypeScript
 - Tailwind CSS v4
 - Neon Postgres
-- OpenAI-compatible Chat Completions API
+- 火山方舟 / OpenAI-compatible Chat Completions API
 - 火山引擎豆包 SeedDream 图像生成
 
 ## 快速开始
@@ -60,10 +60,12 @@ npm run db:init
 | 变量 | 是否必需 | 说明 |
 | --- | --- | --- |
 | `DATABASE_URL` | 必需 | Neon Postgres 连接串。 |
-| `CUSTOM_AI_API_KEY` | AI 解析必需 | OpenAI-compatible 文本模型 API Key。 |
+| `DOUBAO_API_KEY` | AI 解析和生成图片必需 | 火山方舟 / 豆包 API Key，默认同时用于文本解析、卡片文案、prompt 润色和 SeedDream 图像生成。 |
+| `DOUBAO_TEXT_BASE_URL` | 可选 | 豆包文本模型 API Base URL，默认 `https://ark.cn-beijing.volces.com/api/v3`。 |
+| `DOUBAO_TEXT_MODEL` | 可选 | 豆包文本模型名称，默认 `doubao-seed-1-6-251015`。 |
+| `CUSTOM_AI_API_KEY` | 可选 | OpenAI-compatible 文本模型 API Key；填写后会覆盖默认豆包文本模型。 |
 | `CUSTOM_AI_BASE_URL` | 可选 | OpenAI-compatible API Base URL。 |
-| `CUSTOM_AI_MODEL` | 可选 | 文本模型名称，默认 `gpt-5.5`。 |
-| `DOUBAO_API_KEY` | 生成图片必需 | 火山引擎豆包 SeedDream 图像生成 API Key。 |
+| `CUSTOM_AI_MODEL` | 可选 | 自定义文本模型名称，默认 `gpt-5.5`。 |
 | `NEXT_PUBLIC_SITE_URL` | 建议 | 正式访问地址，用于 Open Graph / Twitter metadata。 |
 
 不要提交 `.env`、API Key 或数据库连接串。Vercel 上线时，在项目的 Environment Variables 中配置这些变量。
@@ -104,7 +106,7 @@ npm run db:init  # 初始化 Neon 数据库表
 
 1. 在 Neon 创建免费 Postgres 数据库。
 2. 把 `DATABASE_URL` 填到 Vercel Environment Variables。
-3. 配置 `CUSTOM_AI_API_KEY`，需要生成图片则配置 `DOUBAO_API_KEY`。
+3. 配置 `DOUBAO_API_KEY`。默认会同时用于梦境解析、卡片文案、prompt 润色和图片生成。
 4. 在本地或 Neon SQL Console 执行 `db/schema.sql`，或本地运行 `npm run db:init`。
 5. Vercel 导入仓库，Framework Preset 选择 `Next.js`。
 6. Build Command 使用 `npm run build`。
@@ -116,4 +118,3 @@ npm run db:init  # 初始化 Neon 数据库表
 npm run lint
 npm run build
 ```
-

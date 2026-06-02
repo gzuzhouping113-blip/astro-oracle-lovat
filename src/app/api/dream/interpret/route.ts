@@ -1,16 +1,5 @@
 import { NextRequest } from "next/server";
-import OpenAI from "openai";
-
-function createTextClient() {
-  const apiKey = process.env.CUSTOM_AI_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({
-    apiKey,
-    ...(process.env.CUSTOM_AI_BASE_URL
-      ? { baseURL: process.env.CUSTOM_AI_BASE_URL }
-      : {}),
-  });
-}
+import { createTextClientConfig } from "@/lib/ai-text";
 
 const SYSTEM_PROMPT = `你是一个梦境解析 AI 助手。你的任务是帮助用户回忆、梳理并解读梦境，但你不是心理医生、占卜权威或医疗诊断工具。
 
@@ -81,8 +70,8 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "梦境描述不能为空" }, { status: 400 });
   }
 
-  const client = createTextClient();
-  if (!client) {
+  const textConfig = createTextClientConfig();
+  if (!textConfig) {
     return Response.json({ error: "文本解析服务未配置" }, { status: 500 });
   }
 
@@ -94,8 +83,8 @@ export async function POST(request: NextRequest) {
 请严格按照 JSON 格式输出解析结果，不要有任何其他文字。`;
 
   try {
-    const stream = await client.chat.completions.create({
-      model: "gpt-5.5",
+    const stream = await textConfig.client.chat.completions.create({
+      model: textConfig.model,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
