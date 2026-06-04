@@ -8,7 +8,7 @@ export const SITE_URL =
 
 export const SITE_NAME = "DreamDrop";
 export const SITE_TITLE = "DreamDrop";
-export const SITE_SUBTITLE = "AI 梦境解析与星轨卡片";
+export const SITE_SUBTITLE = "AI梦境解析";
 export const SITE_DESCRIPTION =
   "DreamDrop 是一个融合东方梦象、荣格原型和认知睡眠机制的 AI 梦境解析应用，支持梦境档案保存与梦境卡片生成。";
 export const SITE_DOMAIN = "dreamdrop.cn";
