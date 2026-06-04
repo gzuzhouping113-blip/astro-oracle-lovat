@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download, RefreshCw, Moon, ImageIcon, Share2, BookOpen, Brain, Cpu } from "lucide-react";
+import { toPng } from "html-to-image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useDream } from "@/components/astro/dream-context";
@@ -30,24 +31,76 @@ const THEME = {
   violet: { border:"border-[rgba(136,117,255,0.3)]", accent:"text-[#8875FF]", tag:"bg-[rgba(136,117,255,0.12)] text-[#A897FF] border-[rgba(136,117,255,0.25)]" },
 };
 
-/* Download card as image using canvas */
-async function downloadCard(card: CardData) {
-  if (!card.imageUrl) return;
-  try {
-    const res = await fetch(card.imageUrl);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${SITE_NAME}-${card.title}-${Date.now()}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch {
-    // fallback: open in new tab
-    window.open(card.imageUrl, "_blank");
+const PROXIED_IMAGE_HOSTS = new Set([
+  "154.217.234.133",
+  "lansekafei.asia",
+  "www.lansekafei.asia",
+]);
+
+function getDisplayImageUrl(imageUrl: string) {
+  if (!imageUrl) return "";
+  if (imageUrl.startsWith("data:") || imageUrl.startsWith("/") || imageUrl.startsWith("blob:")) {
+    return imageUrl;
   }
+
+  try {
+    const url = new URL(imageUrl);
+    if (url.protocol === "http:" || PROXIED_IMAGE_HOSTS.has(url.hostname)) {
+      return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
+
+function sanitizeFileName(value: string) {
+  return value.trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 80) || "dream-card";
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForImages(node: HTMLElement) {
+  const images = Array.from(node.querySelectorAll("img"));
+  await Promise.all(
+    images.map((image) => {
+      if (image.complete) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        image.addEventListener("load", () => resolve(), { once: true });
+        image.addEventListener("error", () => resolve(), { once: true });
+      });
+    }),
+  );
+}
+
+async function waitForCardNode(getNode: () => HTMLDivElement | null) {
+  for (let i = 0; i < 20; i += 1) {
+    const node = getNode();
+    if (node) return node;
+    await wait(50);
+  }
+  throw new Error("卡片还没渲染完成，请稍后再试");
+}
+
+async function downloadCard(node: HTMLElement, card: CardData) {
+  await document.fonts.ready;
+  await waitForImages(node);
+
+  const dataUrl = await toPng(node, {
+    cacheBust: true,
+    pixelRatio: 3,
+    backgroundColor: "#09071A",
+  });
+
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = `${SITE_NAME}-${sanitizeFileName(card.title)}-${Date.now()}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 export function CardScreen() {
@@ -59,6 +112,7 @@ export function CardScreen() {
   const [viewMode, setViewMode] = useState<"card"|"detail">("card");
   const [isDownloading, setIsDownloading] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const cardDownloadRef = useRef<HTMLDivElement | null>(null);
 
   // 从档案选中的梦境数据（一次性原子更新，避免多 state 异步问题）
   const [activeDream, setActiveDream] = useState<{
@@ -251,11 +305,12 @@ export function CardScreen() {
 
                 ) : displayCard && viewMode === "card" ? (
                   <motion.div key={`card-${displayCard.createdAt}`}
+                    ref={cardDownloadRef}
                     initial={{opacity:0,scale:0.96}} animate={{opacity:1,scale:1}} transition={{duration:0.4}}
                     className={`w-full aspect-[3/4] rounded-2xl border ${THEME[displayCard.color_theme??"violet"].border} overflow-hidden relative shadow-2xl`}
                   >
                     {displayCard.imageUrl
-                      ? <img src={displayCard.imageUrl} alt="梦境意象" className="absolute inset-0 w-full h-full object-cover" />
+                      ? <img src={getDisplayImageUrl(displayCard.imageUrl)} alt="梦境意象" className="absolute inset-0 w-full h-full object-cover" />
                       : <div className="absolute inset-0 bg-gradient-to-b from-[#1a1050] via-[#0e0a28] to-[#07050f]" />
                     }
                     {/* gradient overlay */}
@@ -435,8 +490,18 @@ export function CardScreen() {
                 <motion.button initial={{opacity:0}} animate={{opacity:1}} whileTap={{scale:0.97}}
                   onClick={async () => {
                     setIsDownloading(true);
-                    await downloadCard(displayCard);
-                    setIsDownloading(false);
+                    setError(null);
+                    try {
+                      if (viewMode !== "card") {
+                        setViewMode("card");
+                      }
+                      const node = await waitForCardNode(() => cardDownloadRef.current);
+                      await downloadCard(node, displayCard);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "下载失败，请稍后再试");
+                    } finally {
+                      setIsDownloading(false);
+                    }
                   }}
                   disabled={isDownloading}
                   className="w-full py-3 rounded-2xl text-[13px] font-semibold flex items-center justify-center gap-2 transition-all
@@ -471,7 +536,7 @@ export function CardScreen() {
                         : "border-[rgba(136,117,255,0.12)] group-hover:border-[rgba(136,117,255,0.28)]"
                     }`}>
                       {h.imageUrl
-                        ? <img src={h.imageUrl} alt={h.title} className="w-full h-full object-cover" />
+                        ? <img src={getDisplayImageUrl(h.imageUrl)} alt={h.title} className="w-full h-full object-cover" />
                         : <div className="w-full h-full bg-gradient-to-b from-[#1a1050] to-[#07050f] flex items-center justify-center">
                             <span className="text-lg font-serif-dream text-white/30">{h.symbol_emoji}</span>
                           </div>

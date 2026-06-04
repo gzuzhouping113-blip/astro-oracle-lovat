@@ -4,13 +4,20 @@ export const runtime = "nodejs";
 
 const DEFAULT_ALLOWED_HOSTS = [
   "154.217.234.133",
+  "lansekafei.asia",
+  "www.lansekafei.asia",
 ];
 
 function getAllowedHosts() {
-  return (process.env.IMAGE_PROXY_ALLOWED_HOSTS ?? DEFAULT_ALLOWED_HOSTS.join(","))
-    .split(",")
-    .map((host) => host.trim())
-    .filter(Boolean);
+  return Array.from(
+    new Set([
+      ...DEFAULT_ALLOWED_HOSTS,
+      ...(process.env.IMAGE_PROXY_ALLOWED_HOSTS ?? "")
+        .split(",")
+        .map((host) => host.trim())
+        .filter(Boolean),
+    ]),
+  );
 }
 
 export async function GET(request: NextRequest) {

@@ -2,6 +2,11 @@ const DEFAULT_IMAGE_BASE_URL = "https://www.lansekafei.asia/v1";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2";
 const IMAGE_TIMEOUT_MS = 120_000;
 const IMAGE_ATTEMPTS = 2;
+const DEFAULT_PROXY_IMAGE_HOSTS = [
+  "154.217.234.133",
+  "lansekafei.asia",
+  "www.lansekafei.asia",
+];
 
 function readEnv(name: string) {
   return process.env[name]?.trim();
@@ -13,6 +18,18 @@ function trimTrailingSlash(value: string) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getProxyImageHosts() {
+  return Array.from(
+    new Set([
+      ...DEFAULT_PROXY_IMAGE_HOSTS,
+      ...(readEnv("IMAGE_PROXY_ALLOWED_HOSTS") ?? "")
+        .split(",")
+        .map((host) => host.trim())
+        .filter(Boolean),
+    ]),
+  );
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number) {
@@ -32,6 +49,9 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: num
 function toDisplayImageUrl(imageUrl: string) {
   try {
     const url = new URL(imageUrl);
+    if (getProxyImageHosts().includes(url.hostname)) {
+      return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+    }
     if (url.protocol === "https:") return imageUrl;
     return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
   } catch {
