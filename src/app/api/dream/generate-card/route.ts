@@ -1,21 +1,12 @@
 import { NextRequest } from "next/server";
-import { createTextClientConfig } from "@/lib/ai-text";
+import { generateImage } from "@/lib/ai-image";
+import { generateText } from "@/lib/ai-text";
 
 export async function POST(request: NextRequest) {
   const { emotion, dreamText, keywords, mood, dream_summary } = await request.json();
 
   if (!dreamText?.trim()) {
     return Response.json({ error: "梦境描述不能为空" }, { status: 400 });
-  }
-
-  const apiKey = process.env.DOUBAO_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "图像生成服务未配置" }, { status: 500 });
-  }
-
-  const textConfig = createTextClientConfig();
-  if (!textConfig) {
-    return Response.json({ error: "文本生成服务未配置" }, { status: 500 });
   }
 
   // Step 1：生成文案 + 生图 prompt
@@ -49,12 +40,7 @@ export async function POST(request: NextRequest) {
   } | null = null;
 
   try {
-    const textResult = await textConfig.client.chat.completions.create({
-      model: textConfig.model,
-      messages: [{ role: "user", content: textPrompt }],
-      stream: false,
-    });
-    const raw = textResult.choices[0].message.content ?? "{}";
+    const raw = await generateText({ prompt: textPrompt });
     const match = raw.match(/\{[\s\S]*\}/);
     if (match) cardText = JSON.parse(match[0]);
   } catch (err) {
@@ -74,34 +60,10 @@ export async function POST(request: NextRequest) {
     };
   }
 
-  // Step 2：调豆包 SeedDream 生图
+  // Step 2：调用 OpenAI-compatible 生图模型
   let imageUrl = "";
   try {
-    const imgRes = await fetch("https://ark.cn-beijing.volces.com/api/v3/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "doubao-seedream-5-0-260128",
-        prompt: cardText.image_prompt,
-        negative_prompt: "脸部特写, 正脸直视镜头, 证件照构图, 商业人像海报, 低清晰度, 模糊, 噪点, 水印, 文字, Logo, 画面裁切, 肢体畸形, 多手多脚, 手部崩坏, 五官错乱, 人体结构异常, 过曝, 颜色过饱和, 强烈闪光灯, 杂乱背景, 元素堆积, 恐怖血腥, 惊悚元素, 猎奇画面, 压迫感过强, 偶像海报感, 商业写真风, close-up face, frontal face, portrait selfie, watermark, text, logo, blurry, low quality, overexposed, horror, gore, deformed limbs",
-        sequential_image_generation: "disabled",
-        response_format: "url",
-        size: "2K",
-        stream: false,
-        watermark: false,
-      }),
-    });
-
-    if (imgRes.ok) {
-      const imgData = await imgRes.json();
-      imageUrl = imgData?.data?.[0]?.url ?? "";
-    } else {
-      const errText = await imgRes.text();
-      console.error("Doubao error:", imgRes.status, errText);
-    }
+    imageUrl = await generateImage(cardText.image_prompt);
   } catch (err) {
     console.error("Image generation error:", err);
   }

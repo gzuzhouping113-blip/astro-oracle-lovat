@@ -13,7 +13,7 @@ This is a Vercel-first Next.js app for "解梦 · 星轨神谕".
 - shadcn/ui-style local primitives
 - Neon Postgres
 - OpenAI-compatible Chat Completions API
-- Volcengine Ark / Doubao SeedDream image generation
+- OpenAI-compatible Images API
 
 ## Product Surface
 
@@ -30,6 +30,7 @@ This is a Vercel-first Next.js app for "解梦 · 星轨神谕".
 - `/api/dream/interpret` text interpretation API
 - `/api/dream/generate-card` share-card copy and image API
 - `/api/dream/generate-image` image API
+- `/api/image-proxy` HTTP image proxy for generated image URLs
 
 Dream entry session state is kept in browser `sessionStorage`. User accounts, dream archive records, and generated-card history are stored in Neon Postgres.
 
@@ -47,9 +48,13 @@ Required production environment variables:
 - `DATABASE_URL`
 - `CUSTOM_AI_API_KEY`
 - `CUSTOM_AI_BASE_URL`
-- `DOUBAO_API_KEY`
+- `CUSTOM_AI_MODEL`
+- `GPT_IMAGE_API_KEY`
+- `GPT_IMAGE_BASE_URL`
+- `GPT_IMAGE_MODEL`
 - `NEXT_PUBLIC_SITE_URL`
 
 Optional:
 
-- `CUSTOM_AI_MODEL`
+- `GPT_IMAGE_SIZE`
+- `IMAGE_PROXY_ALLOWED_HOSTS`

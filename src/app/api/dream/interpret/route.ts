@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createTextClientConfig } from "@/lib/ai-text";
+import { generateText } from "@/lib/ai-text";
 
 const SYSTEM_PROMPT = `你是一个梦境解析 AI 助手。你的任务是帮助用户回忆、梳理并解读梦境，但你不是心理医生、占卜权威或医疗诊断工具。
 
@@ -230,11 +230,6 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "梦境描述不能为空" }, { status: 400 });
   }
 
-  const textConfig = createTextClientConfig();
-  if (!textConfig) {
-    return Response.json({ error: "文本解析服务未配置" }, { status: 500 });
-  }
-
   const userPrompt = `请解析以下梦境：
 
 醒来时的情绪：${emotion}
@@ -243,16 +238,10 @@ export async function POST(request: NextRequest) {
 请严格按照 action 为 "interpret" 的 JSON 格式输出解析结果，不要有任何其他文字，不要追问用户。`;
 
   try {
-    const result = await textConfig.client.chat.completions.create({
-      model: textConfig.model,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      stream: false,
+    const raw = await generateText({
+      system: SYSTEM_PROMPT,
+      prompt: userPrompt,
     });
-
-    const raw = result.choices[0]?.message?.content ?? "{}";
     const parsed = parseJsonObject(raw);
     const interpretation = normalizeInterpretation(parsed, dreamText, realityTrigger);
 
@@ -264,6 +253,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("AI interpret error:", err);
-    return Response.json({ error: "解析失败，请稍后再试" }, { status: 500 });
+    return new Response(JSON.stringify(fallbackInterpretation(dreamText, realityTrigger)), {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   }
 }
