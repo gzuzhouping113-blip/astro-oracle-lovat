@@ -3,29 +3,45 @@ import "./globals.css";
 import { cn } from "@/utils/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/astro/app-shell";
-
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-
-const APP_TITLE = "解梦 · 星轨神谕";
-const APP_DESCRIPTION =
-  "融合周公解梦、荣格原型分析和认知睡眠机制的 AI 梦境解析工具。";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "@/lib/site-config";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: APP_TITLE,
-  description: APP_DESCRIPTION,
-  icons: { icon: "/globe.svg" },
+  applicationName: SITE_NAME,
+  title: {
+    default: SITE_TITLE,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  alternates: {
+    canonical: "/",
+  },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/apple-icon.svg",
+  },
+  manifest: "/manifest.webmanifest",
   openGraph: {
-    title: APP_TITLE,
-    description: APP_DESCRIPTION,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    siteName: SITE_NAME,
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: SITE_TITLE,
+      },
+    ],
+    locale: "zh_CN",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: APP_TITLE,
-    description: APP_DESCRIPTION,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: ["/opengraph-image"],
   },
 };
 

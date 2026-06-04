@@ -6,6 +6,7 @@ import { OracleHeader } from "@/components/astro/oracle-nav";
 import { OracleSidebar } from "@/components/astro/oracle-nav";
 import { OracleBottomNav } from "@/components/astro/oracle-nav";
 import { ErrorBoundary } from "@/components/astro/error-boundary";
+import { SiteFooter } from "@/components/astro/site-footer";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -39,6 +40,7 @@ function AuthenticatedShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      <SiteFooter withBottomNav />
       <OracleBottomNav />
     </DreamProvider>
   );

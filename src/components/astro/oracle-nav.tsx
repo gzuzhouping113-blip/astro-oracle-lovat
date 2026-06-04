@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Moon, Compass, Sparkles, Share2, Clock, LogOut, User } from "lucide-react";
 import { useAuth } from "@/components/astro/auth-context";
+import { SITE_NAME, SITE_SUBTITLE } from "@/lib/site-config";
 
 /* ── Shared design tokens ─────────────────── */
 const P = "#8875FF";   // primary
@@ -36,14 +37,14 @@ export function OracleHeader() {
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-cinzel text-[13px] font-semibold tracking-[0.15em] text-white">解梦 · ORACLE</h1>
+            <h1 className="font-cinzel text-[13px] font-semibold tracking-[0.15em] text-white">{SITE_NAME}</h1>
             <span className="font-mono-tech text-[8px] px-1.5 py-0.5 rounded
               bg-[rgba(136,117,255,0.12)] text-[#8875FF] border border-[rgba(136,117,255,0.2)]">
               v2.0
             </span>
           </div>
           <p className="font-mono-tech text-[9px] text-[#6A677E] tracking-widest mt-0.5">
-            灵魂同步器 · 认知引擎
+            {SITE_SUBTITLE}
           </p>
         </div>
       </div>
@@ -70,8 +71,8 @@ export function OracleSidebar() {
     <aside className="hidden lg:flex flex-col gap-3.5 w-56 shrink-0">
       <div className="glass p-4 rounded-2xl flex flex-col gap-5">
         <div>
-          <p className="font-mono-tech text-[9px] uppercase tracking-widest text-[#6A677E] mb-1">系统仪表盘</p>
-          <p className="font-serif-dream text-xs text-[#8875FF]">梦境意识时空转换仪</p>
+          <p className="font-mono-tech text-[9px] uppercase tracking-widest text-[#6A677E] mb-1">DREAM ARCHIVE</p>
+          <p className="font-serif-dream text-xs text-[#8875FF]">梦境意识转换仪</p>
         </div>
         <nav className="flex flex-col gap-1.5">
           {TAB_ITEMS.map((item) => {

@@ -1,0 +1,18 @@
+{
+  "name": "DreamDrop",
+  "short_name": "DreamDrop",
+  "description": "AI 梦境解析与星轨卡片",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09071A",
+  "theme_color": "#8875FF",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

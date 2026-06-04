@@ -1,6 +1,8 @@
-# 解梦 · 星轨神谕
+# DreamDrop
 
 一个融合周公解梦、荣格原型分析和现代认知睡眠机制的 AI 梦境解析应用。用户注册登录后，可以保存自己的梦境档案、查看历史记录，并生成可下载的宇宙风格分享卡。
+
+正式域名：[dreamdrop.cn](https://dreamdrop.cn)
 
 ## 功能
 
@@ -69,6 +71,9 @@ npm run db:init
 | `GPT_IMAGE_SIZE` | 可选 | 生图尺寸，默认 `1024x1024`。 |
 | `IMAGE_PROXY_ALLOWED_HOSTS` | 可选 | 生图服务返回 HTTP 图片时允许代理的图片域名/IP，避免 HTTPS 页面混合内容拦截。 |
 | `NEXT_PUBLIC_SITE_URL` | 建议 | 正式访问地址，用于 Open Graph / Twitter metadata。 |
+| `NEXT_PUBLIC_ICP_BEIAN` | 可选 | 工信部 ICP 备案号；为空时页面不会显示备案信息。 |
+| `NEXT_PUBLIC_POLICE_BEIAN` | 可选 | 公安备案号；为空时页面不会显示公安备案信息。 |
+| `NEXT_PUBLIC_POLICE_BEIAN_URL` | 可选 | 公安备案详情页链接。 |
 
 不要提交 `.env`、API Key 或数据库连接串。Vercel 上线时，在项目的 Environment Variables 中配置这些变量。
 
@@ -115,6 +120,13 @@ npm run db:init  # 初始化 Neon 数据库表
 7. Vercel 导入仓库，Framework Preset 选择 `Next.js`。
 8. Build Command 使用 `npm run build`。
 9. Deploy。
+
+自定义域名已按 Vercel 推荐方式使用：
+
+- `dreamdrop.cn`
+- `www.dreamdrop.cn`
+
+如之后拿到 ICP / 公安备案号，只需要把 `NEXT_PUBLIC_ICP_BEIAN`、`NEXT_PUBLIC_POLICE_BEIAN` 和 `NEXT_PUBLIC_POLICE_BEIAN_URL` 添加到 Vercel 环境变量后重新部署。
 
 ## 本地检查
 

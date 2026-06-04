@@ -5,6 +5,7 @@ import { Download, RefreshCw, Moon, ImageIcon, Share2, BookOpen, Brain, Cpu } fr
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useDream } from "@/components/astro/dream-context";
+import { SITE_NAME } from "@/lib/site-config";
 
 interface CardData {
   id?: string;
@@ -38,7 +39,7 @@ async function downloadCard(card: CardData) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `解梦卡片-${card.title}-${Date.now()}.jpg`;
+    a.download = `${SITE_NAME}-${card.title}-${Date.now()}.jpg`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -264,7 +265,7 @@ export function CardScreen() {
                     <div className="absolute top-0 left-0 right-0 p-3.5 flex items-center justify-between">
                       <div className="flex items-center gap-1.5 bg-[rgba(9,7,26,0.6)] backdrop-blur-md px-2.5 py-1 rounded-full border border-[rgba(255,255,255,0.1)]">
                         <Moon className="w-2.5 h-2.5 text-[#8875FF]" />
-                        <span className="font-mono-tech text-[8px] text-white/65 tracking-widest">解梦 · 星轨神谕</span>
+                        <span className="font-mono-tech text-[8px] text-white/65 tracking-widest">{SITE_NAME}</span>
                       </div>
                       <span className={`font-mono-tech text-[9px] px-2 py-0.5 rounded-full border backdrop-blur-md ${THEME[displayCard.color_theme??"violet"].tag}`}>
                         {displayCard.emotion.split(" / ")[0]}

@@ -1,12 +1,9 @@
 import { ImageResponse } from 'next/og';
+import { SITE_DESCRIPTION, SITE_DOMAIN, SITE_NAME, SITE_SUBTITLE } from '@/lib/site-config';
 
-export const alt = '解梦 · 星轨神谕 app preview';
+export const alt = `${SITE_NAME} app preview`;
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
-
-const appName = '解梦 · 星轨神谕';
-const description =
-  '融合东方梦象、荣格原型与认知睡眠机制的 AI 梦境解析应用。';
 
 export default function Image() {
   return new ImageResponse(
@@ -42,20 +39,20 @@ export default function Image() {
               background: '#F4C430',
             }}
           />
-          AI Dream Oracle
+          {SITE_SUBTITLE}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
           <div style={{ fontSize: 84, fontWeight: 700, lineHeight: 1.05 }}>
-            {appName}
+            {SITE_NAME}
           </div>
           <div style={{ maxWidth: 820, fontSize: 34, lineHeight: 1.38 }}>
-            {description}
+            {SITE_DESCRIPTION}
           </div>
         </div>
 
         <div style={{ fontSize: 26, opacity: 0.72 }}>
-          Vercel-ready Next.js app
+          {SITE_DOMAIN}
         </div>
       </div>
     ),
