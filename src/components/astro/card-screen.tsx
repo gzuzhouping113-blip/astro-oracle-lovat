@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Download, RefreshCw, Moon, ImageIcon, Share2, BookOpen, Brain, Cpu } from "lucide-react";
-import { toPng } from "html-to-image";
+import { toBlob } from "html-to-image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useDream } from "@/components/astro/dream-context";
@@ -63,6 +63,13 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number) {
+  return Promise.race<T | null>([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
+}
+
 async function waitForImages(node: HTMLElement) {
   const images = Array.from(node.querySelectorAll("img"));
   await Promise.all(
@@ -77,7 +84,7 @@ async function waitForImages(node: HTMLElement) {
 }
 
 async function waitForCardNode(getNode: () => HTMLDivElement | null) {
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < 50; i += 1) {
     const node = getNode();
     if (node) return node;
     await wait(50);
@@ -85,22 +92,165 @@ async function waitForCardNode(getNode: () => HTMLDivElement | null) {
   throw new Error("卡片还没渲染完成，请稍后再试");
 }
 
-async function downloadCard(node: HTMLElement, card: CardData) {
-  await document.fonts.ready;
-  await waitForImages(node);
-
-  const dataUrl = await toPng(node, {
-    cacheBust: true,
-    pixelRatio: 3,
-    backgroundColor: "#09071A",
-  });
-
+function downloadBlob(blob: Blob, card: CardData) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = dataUrl;
+  a.href = url;
   a.download = `${SITE_NAME}-${sanitizeFileName(card.title)}-${Date.now()}.png`;
+  a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines: number) {
+  const chars = Array.from(text);
+  const lines: string[] = [];
+  let line = "";
+
+  chars.forEach((char) => {
+    const testLine = line + char;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = char;
+    } else {
+      line = testLine;
+    }
+  });
+  if (line) lines.push(line);
+
+  lines.slice(0, maxLines).forEach((current, index) => {
+    const suffix = index === maxLines - 1 && lines.length > maxLines ? "..." : "";
+    ctx.fillText(current + suffix, x, y + index * lineHeight);
+  });
+}
+
+function loadCanvasImage(src: string) {
+  return new Promise<HTMLImageElement | null>((resolve) => {
+    if (!src) {
+      resolve(null);
+      return;
+    }
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = src.startsWith("/") ? new URL(src, window.location.origin).toString() : src;
+  });
+}
+
+async function renderCardFallbackBlob(card: CardData) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 900;
+  canvas.height = 1200;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("浏览器暂不支持卡片下载");
+
+  const image = await loadCanvasImage(getDisplayImageUrl(card.imageUrl));
+  if (image) {
+    const scale = Math.max(canvas.width / image.width, canvas.height / image.height);
+    const width = image.width * scale;
+    const height = image.height * scale;
+    ctx.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+  } else {
+    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bg.addColorStop(0, "#1a1050");
+    bg.addColorStop(0.5, "#0e0a28");
+    bg.addColorStop(1, "#07050f");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  const overlay = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  overlay.addColorStop(0, "rgba(14,10,32,0.18)");
+  overlay.addColorStop(0.48, "rgba(10,7,28,0.36)");
+  overlay.addColorStop(1, "rgba(7,5,15,0.95)");
+  ctx.fillStyle = overlay;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(9,7,26,0.68)";
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(48, 48, 190, 42, 21);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.72)";
+  ctx.font = "18px monospace";
+  ctx.fillText(SITE_NAME, 86, 75);
+
+  ctx.fillStyle = "rgba(18,14,50,0.78)";
+  ctx.strokeStyle = "rgba(136,117,255,0.24)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(56, 760, 788, 360, 34);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#A897FF";
+  ctx.font = "54px serif";
+  ctx.fillText(card.symbol_emoji || "*", 96, 840);
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "bold 38px serif";
+  wrapCanvasText(ctx, card.title, 170, 836, 610, 44, 2);
+
+  ctx.fillStyle = "rgba(228,225,245,0.82)";
+  ctx.font = "26px serif";
+  wrapCanvasText(ctx, card.short_reading, 96, 920, 710, 36, 3);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.10)";
+  ctx.beginPath();
+  ctx.moveTo(96, 1020);
+  ctx.lineTo(804, 1020);
+  ctx.stroke();
+
+  ctx.fillStyle = "#C9963A";
+  ctx.font = "18px monospace";
+  ctx.fillText("东方", 96, 1060);
+  ctx.fillStyle = "rgba(228,225,245,0.70)";
+  ctx.font = "22px serif";
+  wrapCanvasText(ctx, card.east_tip, 96, 1094, 320, 28, 2);
+
+  ctx.fillStyle = "#2DD4BF";
+  ctx.font = "18px monospace";
+  ctx.fillText("心理", 500, 1060);
+  ctx.fillStyle = "rgba(228,225,245,0.70)";
+  ctx.font = "22px serif";
+  wrapCanvasText(ctx, card.west_tip, 500, 1094, 304, 28, 2);
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("卡片生成失败，请稍后再试"));
+    }, "image/png");
+  });
+}
+
+async function downloadCard(node: HTMLElement, card: CardData) {
+  await withTimeout(document.fonts.ready, 1200);
+  await withTimeout(waitForImages(node), 1400);
+  await wait(100);
+
+  try {
+    const blob = await withTimeout(
+      toBlob(node, {
+        cacheBust: true,
+        pixelRatio: 3,
+        backgroundColor: "#09071A",
+        skipFonts: true,
+      }),
+      2600,
+    );
+    if (blob) {
+      downloadBlob(blob, card);
+      return;
+    }
+  } catch (err) {
+    console.warn("DOM card download failed, using canvas fallback:", err);
+  }
+
+  downloadBlob(await renderCardFallbackBlob(card), card);
 }
 
 export function CardScreen() {
@@ -229,19 +379,14 @@ export function CardScreen() {
 
   return (
     <div className="w-full flex-1 flex flex-col gap-5">
-      {/* Channel header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ImageIcon className="w-4 h-4 text-[#2DD4BF]" />
-          <span className="font-mono-tech text-[11px] tracking-widest text-[#8875FF]">频道 03：梦境分享卡</span>
-        </div>
-        {displayCard && !isGenerating && canGenerateCard && (
+      {displayCard && !isGenerating && canGenerateCard ? (
+        <div className="flex items-center justify-end">
           <motion.button whileTap={{ scale:0.96 }} onClick={() => doGenerate(emotion, dreamText, interpretation)}
             className="flex items-center gap-1.5 font-mono-tech text-[10px] text-[#6A677E] hover:text-[#A9A6C4] transition-colors">
             <RefreshCw className="w-3 h-3" />重新生成
           </motion.button>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       {isHistoryLoading && !displayCard && !hasCurrentDream ? (
         <div className="flex-1 flex items-center justify-center py-20">
@@ -262,8 +407,11 @@ export function CardScreen() {
         <>
           {/* ── 梦境原文（最上方）── */}
           {sourceExcerpt ? (
-            <div className="glass rounded-2xl p-4">
-              <p className="font-mono-tech text-[9px] text-[#C9963A] uppercase tracking-widest mb-2">梦境原文</p>
+            <div className="glass rounded-2xl p-4 border border-[rgba(201,150,58,0.14)]">
+              <div className="mb-2.5 flex items-center gap-2">
+                <span className="h-px w-5 bg-gradient-to-r from-[#C9963A] to-transparent" />
+                <p className="font-serif-dream text-[13px] text-[#E8B85A] tracking-wide">梦境原文</p>
+              </div>
               <p className="font-serif-dream text-[13px] text-[#A9A6C4] leading-relaxed">
                 {sourceExcerpt}
               </p>
@@ -329,7 +477,7 @@ export function CardScreen() {
                     className={`w-full aspect-[3/4] rounded-2xl border ${THEME[displayCard.color_theme??"violet"].border} overflow-hidden relative shadow-2xl`}
                   >
                     {displayCard.imageUrl
-                      ? <img src={getDisplayImageUrl(displayCard.imageUrl)} alt="梦境意象" className="absolute inset-0 w-full h-full object-cover" />
+                      ? <img src={getDisplayImageUrl(displayCard.imageUrl)} alt="梦境意象" crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-cover" />
                       : <div className="absolute inset-0 bg-gradient-to-b from-[#1a1050] via-[#0e0a28] to-[#07050f]" />
                     }
                     {/* gradient overlay */}
@@ -514,6 +662,7 @@ export function CardScreen() {
                     try {
                       if (viewMode !== "card") {
                         setViewMode("card");
+                        await wait(120);
                       }
                       const node = await waitForCardNode(() => cardDownloadRef.current);
                       await downloadCard(node, displayCard);
@@ -556,7 +705,7 @@ export function CardScreen() {
                         : "border-[rgba(136,117,255,0.12)] group-hover:border-[rgba(136,117,255,0.28)]"
                     }`}>
                       {h.imageUrl
-                        ? <img src={getDisplayImageUrl(h.imageUrl)} alt={h.title} className="w-full h-full object-cover" />
+                        ? <img src={getDisplayImageUrl(h.imageUrl)} alt={h.title} crossOrigin="anonymous" className="w-full h-full object-cover" />
                         : <div className="w-full h-full bg-gradient-to-b from-[#1a1050] to-[#07050f] flex items-center justify-center">
                             <span className="text-lg font-serif-dream text-white/30">{h.symbol_emoji}</span>
                           </div>

@@ -1,11 +1,42 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Star, Trash2, ChevronLeft } from "lucide-react";
+import { ChevronRight, Star, Trash2, ChevronLeft, Plus, ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { useDream } from "@/components/astro/dream-context";
 import { useRouter } from "next/navigation";
 import type { DreamRecord } from "@/lib/dream-types";
+
+interface ArchiveCard {
+  id?: string;
+  dreamRecordId?: string | null;
+  title: string;
+  imageUrl?: string;
+  symbol_emoji?: string;
+  createdAt: number;
+}
+
+const PROXIED_IMAGE_HOSTS = new Set([
+  "154.217.234.133",
+  "lansekafei.asia",
+  "www.lansekafei.asia",
+]);
+
+function getDisplayImageUrl(imageUrl?: string) {
+  if (!imageUrl) return "";
+  if (imageUrl.startsWith("data:") || imageUrl.startsWith("/") || imageUrl.startsWith("blob:")) return imageUrl;
+
+  try {
+    const url = new URL(imageUrl);
+    if (url.protocol === "http:" || PROXIED_IMAGE_HOSTS.has(url.hostname)) {
+      return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
 
 /* ── Date utilities ──────────────────────────── */
 function parseRecordDate(dateStr: string): Date {
@@ -104,6 +135,7 @@ export function ArchiveScreen() {
   const [mounted, setMounted] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [cardHistory, setCardHistory] = useState<ArchiveCard[]>([]);
 
   const today = new Date();
   const [calYear, setCalYear] = useState(today.getFullYear());
@@ -113,6 +145,24 @@ export function ArchiveScreen() {
   const router = useRouter();
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/dream/cards")
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (active) setCardHistory(data.cards ?? []);
+      })
+      .catch((err) => {
+        console.error("Load dream cards error:", err);
+        if (active) setCardHistory([]);
+      });
+
+    return () => { active = false; };
+  }, []);
 
   /* 所有记录日期（用于日历标点） */
   const recordDates = useMemo(() =>
@@ -130,6 +180,16 @@ export function ArchiveScreen() {
       .filter(r => (now - parseRecordDate(r.date).getTime()) / 86400000 <= 30)
       .sort((a, b) => parseRecordDate(b.date).getTime() - parseRecordDate(a.date).getTime());
   }, [records, selectedDate]);
+
+  const cardByRecordId = useMemo(() => {
+    const map = new Map<string, ArchiveCard>();
+    cardHistory.forEach((card) => {
+      if (card.dreamRecordId && !map.has(card.dreamRecordId)) {
+        map.set(card.dreamRecordId, card);
+      }
+    });
+    return map;
+  }, [cardHistory]);
 
   const handleOpen = (record: DreamRecord) => {
     setEmotion(record.emotion);
@@ -164,6 +224,21 @@ export function ArchiveScreen() {
   return (
     /* 点击空白处取消选中日期 */
     <div className="w-full flex-1 flex flex-col gap-5" onClick={() => setSelectedDate(null)}>
+
+      <Link
+        href="/?reset=true"
+        onClick={(e) => e.stopPropagation()}
+        className="glass-bright group flex items-center justify-between rounded-2xl border border-[rgba(136,117,255,0.2)] p-4 transition-all hover:border-[rgba(136,117,255,0.36)] hover:bg-white/[0.045]"
+      >
+        <div>
+          <p className="font-mono-tech text-[10px] tracking-widest text-[#8875FF]/75">NEW DREAM</p>
+          <p className="mt-1 font-serif-dream text-[16px] text-white">叙述新的梦境</p>
+          <p className="mt-1 text-[12px] text-white/35">新的解析会自动保存到梦境档案，并关联生成的卡片。</p>
+        </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#8875FF]/20 text-[#8875FF] transition-all group-hover:bg-[#8875FF]/30">
+          <Plus className="h-4 w-4" />
+        </div>
+      </Link>
 
       {/* ── 日历面板 ── */}
       <div className="glass-panel rounded-2xl p-4" onClick={e => e.stopPropagation()}>
@@ -233,6 +308,10 @@ export function ArchiveScreen() {
         <div className="flex flex-col gap-2.5">
           <AnimatePresence>
             {filteredRecords.map((rec) => (
+              (() => {
+                const card = cardByRecordId.get(rec.id);
+                const cardImage = getDisplayImageUrl(card?.imageUrl);
+                return (
               <motion.div key={rec.id}
                 layout
                 initial={{ opacity: 0, y: 6 }}
@@ -267,6 +346,15 @@ export function ArchiveScreen() {
                   className="glass-panel rounded-2xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center
                     gap-3 group cursor-pointer hover:border-[rgba(136,117,255,0.18)] transition-all"
                 >
+                  <div className="h-20 w-full shrink-0 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03] md:h-24 md:w-20">
+                    {cardImage ? (
+                      <img src={cardImage} alt={card?.title ?? rec.excerpt} crossOrigin="anonymous" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle,rgba(136,117,255,0.18),rgba(9,7,26,0.2))]">
+                        <ImageIcon className="h-5 w-5 text-white/25" />
+                      </div>
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                       <span className="font-mono-tech text-[9px] text-[#8875FF]/70">{rec.id}</span>
@@ -275,6 +363,11 @@ export function ArchiveScreen() {
                         {rec.emotion.split(" / ")[0]}
                       </span>
                     </div>
+                    {card ? (
+                      <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-[#C9963A]/65">
+                        已关联卡片 · {card.title}
+                      </p>
+                    ) : null}
                     <p className="text-[13px] text-white/55 line-clamp-1 leading-relaxed font-serif-dream mb-1.5">
                       「{rec.excerpt}」
                     </p>
@@ -302,6 +395,8 @@ export function ArchiveScreen() {
                   </div>
                 </div>
               </motion.div>
+                );
+              })()
             ))}
           </AnimatePresence>
         </div>
