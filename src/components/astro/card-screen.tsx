@@ -107,6 +107,7 @@ export function CardScreen() {
   const [mounted, setMounted] = useState(false);
   const [card, setCard] = useState<CardData | null>(null);
   const [history, setHistory] = useState<CardData[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"card"|"detail">("card");
@@ -146,11 +147,16 @@ export function CardScreen() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
       })
-      .then((data) => setHistory(data.cards ?? []))
+      .then((data) => {
+        const cards = (data.cards ?? []) as CardData[];
+        setHistory(cards);
+        setCard((current) => current ?? cards[0] ?? null);
+      })
       .catch((err) => {
         console.error("Load card history error:", err);
         setHistory([]);
-      });
+      })
+      .finally(() => setIsHistoryLoading(false));
   }, []);
 
   const searchParams = useSearchParams();
@@ -215,6 +221,11 @@ export function CardScreen() {
   );
 
   const displayCard = card;
+  const hasCurrentDream = Boolean(dreamText.trim());
+  const canGenerateCard = hasCurrentDream && Boolean(interpretation);
+  const sourceExcerpt = hasCurrentDream ? displayExcerpt : displayCard?.dreamExcerpt ?? "";
+  const sourceEmotion = hasCurrentDream ? emotion : displayCard?.emotion ?? "";
+  const sourceKeywords = hasCurrentDream ? displayKeywords : [];
 
   return (
     <div className="w-full flex-1 flex flex-col gap-5">
@@ -224,7 +235,7 @@ export function CardScreen() {
           <ImageIcon className="w-4 h-4 text-[#2DD4BF]" />
           <span className="font-mono-tech text-[11px] tracking-widest text-[#8875FF]">频道 03：梦境分享卡</span>
         </div>
-        {displayCard && !isGenerating && (
+        {displayCard && !isGenerating && canGenerateCard && (
           <motion.button whileTap={{ scale:0.96 }} onClick={() => doGenerate(emotion, dreamText, interpretation)}
             className="flex items-center gap-1.5 font-mono-tech text-[10px] text-[#6A677E] hover:text-[#A9A6C4] transition-colors">
             <RefreshCw className="w-3 h-3" />重新生成
@@ -232,13 +243,17 @@ export function CardScreen() {
         )}
       </div>
 
-      {!dreamText ? (
+      {isHistoryLoading && !displayCard && !hasCurrentDream ? (
+        <div className="flex-1 flex items-center justify-center py-20">
+          <div className="w-7 h-7 rounded-full border-2 border-t-transparent border-[#8875FF] animate-spin" />
+        </div>
+      ) : !hasCurrentDream && !displayCard ? (
         <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">
           <div className="w-16 h-16 rounded-full bg-[rgba(136,117,255,0.07)] border border-[rgba(136,117,255,0.14)] flex items-center justify-center mb-5">
             <Share2 className="w-7 h-7 text-[#8875FF]/40" />
           </div>
-          <h3 className="font-serif-dream text-[16px] text-white mb-2">请先完成梦境解析</h3>
-          <p className="text-[13px] text-[#6A677E] mb-7 max-w-xs leading-relaxed">完成解析后将自动生成专属分享卡</p>
+          <h3 className="font-serif-dream text-[16px] text-white mb-2">还没有梦境卡片</h3>
+          <p className="text-[13px] text-[#6A677E] mb-7 max-w-xs leading-relaxed">先去诉说梦境，生成你的第一张分享卡</p>
           <Link href="/" className="bg-gradient-to-r from-[#8875FF] to-[#5B4FD4] text-white text-[13px] font-semibold px-7 py-3 rounded-full shadow-lg shadow-[#8875FF]/25">
             前往述梦 →
           </Link>
@@ -246,22 +261,26 @@ export function CardScreen() {
       ) : (
         <>
           {/* ── 梦境原文（最上方）── */}
-          <div className="glass rounded-2xl p-4">
-            <p className="font-mono-tech text-[9px] text-[#C9963A] uppercase tracking-widest mb-2">梦境原文</p>
-            <p className="font-serif-dream text-[13px] text-[#A9A6C4] leading-relaxed">
-              {displayExcerpt}
-            </p>
-            <div className="flex gap-2 mt-2.5 flex-wrap">
-              <span className="font-mono-tech text-[10px] text-[#6A677E] border border-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded-full">
-                {emotion.split(" / ")[0]}
-              </span>
-              {displayKeywords.slice(0, 3).map((kw: string, i: number) => (
-                <span key={i} className="font-mono-tech text-[10px] text-[#8875FF]/70 border border-[rgba(136,117,255,0.2)] px-2 py-0.5 rounded-full">
-                  #{kw}
-                </span>
-              ))}
+          {sourceExcerpt ? (
+            <div className="glass rounded-2xl p-4">
+              <p className="font-mono-tech text-[9px] text-[#C9963A] uppercase tracking-widest mb-2">梦境原文</p>
+              <p className="font-serif-dream text-[13px] text-[#A9A6C4] leading-relaxed">
+                {sourceExcerpt}
+              </p>
+              <div className="flex gap-2 mt-2.5 flex-wrap">
+                {sourceEmotion ? (
+                  <span className="font-mono-tech text-[10px] text-[#6A677E] border border-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded-full">
+                    {sourceEmotion.split(" / ")[0]}
+                  </span>
+                ) : null}
+                {sourceKeywords.slice(0, 3).map((kw: string, i: number) => (
+                  <span key={i} className="font-mono-tech text-[10px] text-[#8875FF]/70 border border-[rgba(136,117,255,0.2)] px-2 py-0.5 rounded-full">
+                    #{kw}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {/* ── Main layout ── */}
           <div className="flex flex-col lg:flex-row gap-5 items-start">
@@ -465,6 +484,7 @@ export function CardScreen() {
                   >
                     <p className="text-[12px] text-red-300/80">{error}</p>
                     <button onClick={() => doGenerate(emotion, dreamText, interpretation)}
+                      disabled={!canGenerateCard}
                       className="font-mono-tech text-[11px] text-[#8875FF] border border-[rgba(136,117,255,0.3)] px-4 py-2 rounded-xl hover:bg-[rgba(136,117,255,0.1)] transition-all">
                       重试
                     </button>
@@ -522,7 +542,7 @@ export function CardScreen() {
           {/* ── 历史梦境 ── */}
           {history.length > 0 && (
             <div>
-              <p className="font-mono-tech text-[9px] text-[#3E3C50] uppercase tracking-widest mb-3">历史梦境</p>
+              <p className="font-mono-tech text-[9px] text-[#3E3C50] uppercase tracking-widest mb-3">历史梦境卡片</p>
               <div className="flex gap-3 overflow-x-auto pb-2">
                 {history.map((h, i) => (
                   <motion.button key={h.createdAt}

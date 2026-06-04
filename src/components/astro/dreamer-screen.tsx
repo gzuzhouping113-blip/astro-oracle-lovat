@@ -31,10 +31,10 @@ export function DreamerScreen() {
     if (!mounted) return;
     if (searchParams.get("reset") === "true") {
       setExpanded(false);
-      setDreamText(""); setRealityTrigger("");
+      setDreamText(""); setRealityTrigger(""); setEmotion("");
       router.replace("/");
     }
-  }, [mounted, searchParams, setDreamText, setRealityTrigger, router]);
+  }, [mounted, searchParams, setDreamText, setRealityTrigger, setEmotion, router]);
 
   // 每次组件首次挂载（从其他页面跳回 /），都折叠并清空
   useEffect(() => {
@@ -42,6 +42,7 @@ export function DreamerScreen() {
     setExpanded(false);
     setDreamText("");
     setRealityTrigger("");
+    setEmotion("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
@@ -206,10 +207,18 @@ export function DreamerScreen() {
               >
                 <span className="flex items-center justify-between gap-4">
                   <span className="flex flex-col gap-1.5">
-                    <span className="text-[11px] font-mono-tech tracking-widest text-white/35 uppercase">
-                      点击选择醒来时的第一感受
-                    </span>
-                    <span className="text-base text-white/85">{emotion}</span>
+                    {emotion ? (
+                      <>
+                        <span className="text-[11px] font-mono-tech tracking-widest text-white/35 uppercase">
+                          已选择醒来时的第一感受
+                        </span>
+                        <span className="text-base text-white/85">{emotion}</span>
+                      </>
+                    ) : (
+                      <span className="text-base text-white/35">
+                        点击选择醒来时的第一感受
+                      </span>
+                    )}
                   </span>
                   <ChevronDown
                     className={`h-4 w-4 shrink-0 text-white/35 transition-transform group-hover:text-white/60 ${
@@ -288,12 +297,12 @@ export function DreamerScreen() {
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 onClick={() => {
-                  if (!dreamText.trim()) return;
+                  if (!dreamText.trim() || !emotion) return;
                   setCurrentStep(3);
                   triggerInterpret();
                   router.push("/parser");
                 }}
-                disabled={!dreamText.trim() || isLoading}
+                disabled={!dreamText.trim() || !emotion || isLoading}
                 className="flex items-center gap-2.5 bg-[#8875FF] hover:bg-[#9A88FF] disabled:opacity-30
                   text-white font-bold text-[13px] px-10 py-3.5 rounded-full
                   shadow-lg shadow-[#8875FF]/25 font-mono-tech tracking-wider transition-colors"
@@ -307,6 +316,7 @@ export function DreamerScreen() {
                   setExpanded(false);
                   setDreamText("");
                   setRealityTrigger("");
+                  setEmotion("");
                 }}
                 className="font-mono-tech text-[11px] text-white/20 hover:text-white/50 tracking-wider transition-colors"
               >

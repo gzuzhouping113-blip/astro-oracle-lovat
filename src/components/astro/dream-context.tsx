@@ -38,7 +38,7 @@ function ssSave(key: string, data: object) {
 }
 
 export function DreamProvider({ children }: { children: React.ReactNode }) {
-  const [emotion, setEmotionState] = useState("迷茫 / Bewildered");
+  const [emotion, setEmotionState] = useState("");
   const [dreamText, setDreamTextState] = useState("");
   const [realityTrigger, setRealityTriggerState] = useState("");
   const [currentStep, setCurrentStepState] = useState(1);
@@ -246,7 +246,7 @@ export function DreamProvider({ children }: { children: React.ReactNode }) {
     setCurrentStepState(1);
     setInterpretation(null);
     setStreamBuffer("");
-    setEmotionState("迷茫 / Bewildered");
+    setEmotionState("");
     setCurrentRecordId(null);
     setIsSaved(false);
     if (typeof window !== "undefined") {
