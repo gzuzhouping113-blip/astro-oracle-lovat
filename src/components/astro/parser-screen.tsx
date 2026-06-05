@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Sparkles, Share2, BookOpen, Brain, Cpu, Eye, ImageIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDream } from "@/components/astro/dream-context";
 import { MOOD_LABELS } from "@/lib/dream-types";
 import type { DreamRecord } from "@/lib/dream-types";
@@ -115,6 +116,10 @@ function ArchiveRecordButton({
 export function ParserScreen() {
   const [mounted, setMounted] = useState(false);
   const [cardHistory, setCardHistory] = useState<ParserArchiveCard[]>([]);
+  const [openedFromArchive, setOpenedFromArchive] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const returningFromCard = searchParams.get("fromCard") === "true";
   const {
     interpretation,
     isLoading,
@@ -159,6 +164,8 @@ export function ParserScreen() {
     setDreamText(record.fullText ?? record.excerpt);
     setInterpretation(record.interpretation ?? null);
     setCurrentStep(3);
+    setOpenedFromArchive(true);
+    if (returningFromCard) router.replace("/parser", { scroll: false });
   };
 
   if (!mounted) return (
@@ -201,7 +208,7 @@ export function ParserScreen() {
   );
 
   /* ── Empty ── */
-  if (!interpretation) return (
+  if (!interpretation || (returningFromCard && !openedFromArchive)) return (
     <div className="flex-1 flex flex-col gap-5 py-4">
       <div className="glass-bright rounded-2xl border border-[rgba(136,117,255,0.18)] p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

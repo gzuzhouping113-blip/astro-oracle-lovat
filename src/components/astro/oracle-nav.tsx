@@ -17,6 +17,11 @@ const TAB_ITEMS = [
   { href: "/archive", icon: Clock,    label: "档案",  tab: "04" },
 ];
 
+function getNavHref(href: string, pathname: string) {
+  if (pathname !== "/card" || href === "/card") return href;
+  return href === "/" ? "/?fromCard=true" : `${href}?fromCard=true`;
+}
+
 /* ── Header ─────────────────────────────── */
 export function OracleHeader() {
   const { user, logout } = useAuth();
@@ -78,7 +83,7 @@ export function OracleSidebar() {
           {TAB_ITEMS.map((item) => {
             const active = pathname === item.href;
             return (
-              <Link key={item.href} href={item.href}
+              <Link key={item.href} href={getNavHref(item.href, pathname)}
                 className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-200 ${
                   active
                     ? "bg-[rgba(136,117,255,0.14)] border border-[rgba(136,117,255,0.22)] text-white"
@@ -112,7 +117,7 @@ export function OracleBottomNav() {
         {TAB_ITEMS.map((item) => {
           const active = pathname === item.href;
           return (
-            <Link key={item.href} href={item.href}
+            <Link key={item.href} href={getNavHref(item.href, pathname)}
               className={`flex flex-col items-center gap-1 py-1 transition-all ${
                 active ? "text-white" : "text-[#3E3C50]"
               }`}

@@ -1,9 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, ChevronDown, Play } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ImageIcon, Play, Plus } from "lucide-react";
 import { useDream } from "@/components/astro/dream-context";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { DreamRecord } from "@/lib/dream-types";
 
 const EMOTION_OPTIONS = [
   "迷茫 / Bewildered",
@@ -14,17 +15,115 @@ const EMOTION_OPTIONS = [
   "平静 / Serene",
 ];
 
+interface DreamerArchiveCard {
+  dreamRecordId?: string | null;
+  title: string;
+  imageUrl?: string;
+}
+
+const PROXIED_IMAGE_HOSTS = new Set([
+  "154.217.234.133",
+  "lansekafei.asia",
+  "www.lansekafei.asia",
+]);
+
+function getDisplayImageUrl(imageUrl?: string) {
+  if (!imageUrl) return "";
+  if (imageUrl.startsWith("data:") || imageUrl.startsWith("/") || imageUrl.startsWith("blob:")) return imageUrl;
+
+  try {
+    const url = new URL(imageUrl);
+    if (url.protocol === "http:" || PROXIED_IMAGE_HOSTS.has(url.hostname)) {
+      return `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+    }
+  } catch {
+    return imageUrl;
+  }
+
+  return imageUrl;
+}
+
+function DreamerArchiveItem({
+  record,
+  card,
+  onOpen,
+}: {
+  record: DreamRecord;
+  card?: DreamerArchiveCard;
+  onOpen: (record: DreamRecord) => void;
+}) {
+  const cardImage = getDisplayImageUrl(card?.imageUrl);
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={() => onOpen(record)}
+      className="group flex w-full gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3 text-left transition-all hover:border-[rgba(136,117,255,0.24)] hover:bg-white/[0.055]"
+    >
+      <div className="h-20 w-16 shrink-0 overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.03]">
+        {cardImage ? (
+          <img src={cardImage} alt={card?.title ?? record.excerpt} crossOrigin="anonymous" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle,rgba(136,117,255,0.18),rgba(9,7,26,0.2))]">
+            <ImageIcon className="h-4 w-4 text-white/25" />
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <span className="font-mono-tech text-[10px] text-[#8875FF]/70">{record.date}</span>
+          <span className="font-serif-dream text-[11px] text-white/45">{record.emotion.split(" / ")[0]}</span>
+        </div>
+        {card ? (
+          <p className="mb-1.5 truncate font-mono-tech text-[9px] tracking-widest text-[#C9963A]/65">
+            已关联卡片 · {card.title}
+          </p>
+        ) : null}
+        <p className="line-clamp-2 font-serif-dream text-[13px] leading-relaxed text-white/62">
+          「{record.excerpt}」
+        </p>
+      </div>
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/[0.03] self-center transition-all group-hover:bg-[rgba(136,117,255,0.12)]">
+        <ChevronRight className="h-3.5 w-3.5 text-white/20 group-hover:text-[#8875FF]" />
+      </div>
+    </motion.button>
+  );
+}
+
 export function DreamerScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [emotionPickerOpen, setEmotionPickerOpen] = useState(false);
+  const [cardHistory, setCardHistory] = useState<DreamerArchiveCard[]>([]);
 
   const { emotion, setEmotion, dreamText, setDreamText, realityTrigger,
-    setRealityTrigger, setCurrentStep, triggerInterpret, isLoading } = useDream();
+    setRealityTrigger, setCurrentStep, setInterpretation, triggerInterpret, isLoading, records, resetDream } = useDream();
+  const returningFromCard = searchParams.get("fromCard") === "true";
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    fetch("/api/dream/cards")
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (active) setCardHistory(data.cards ?? []);
+      })
+      .catch((err) => {
+        console.error("Load dream cards error:", err);
+        if (active) setCardHistory([]);
+      });
+
+    return () => { active = false; };
+  }, []);
 
   // 每次从欢迎页进入（包括导航栏点「述梦」）都重置为欢迎态并清空内容
   useEffect(() => {
@@ -43,12 +142,83 @@ export function DreamerScreen() {
     setDreamText("");
     setRealityTrigger("");
     setEmotion("");
+    if (returningFromCard) resetDream();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
+
+  const cardByRecordId = useMemo(() => {
+    const map = new Map<string, DreamerArchiveCard>();
+    cardHistory.forEach((card) => {
+      if (card.dreamRecordId && !map.has(card.dreamRecordId)) {
+        map.set(card.dreamRecordId, card);
+      }
+    });
+    return map;
+  }, [cardHistory]);
+
+  const openRecord = (record: DreamRecord) => {
+    setEmotion(record.emotion);
+    setDreamText(record.fullText ?? record.excerpt);
+    setInterpretation(record.interpretation ?? null);
+    setCurrentStep(3);
+    router.push("/parser");
+  };
+
+  const startNewDream = () => {
+    resetDream();
+    setExpanded(true);
+    router.replace("/");
+  };
 
   if (!mounted) return (
     <div className="flex-1 flex items-center justify-center py-20">
       <div className="w-6 h-6 rounded-full border-2 border-t-transparent border-[#8875FF] animate-spin" />
+    </div>
+  );
+
+  if (returningFromCard && !expanded) return (
+    <div className="w-full flex-1 flex flex-col gap-5">
+      <button
+        type="button"
+        onClick={startNewDream}
+        className="glass-bright group flex items-center justify-between rounded-2xl border border-[rgba(136,117,255,0.2)] p-4 text-left transition-all hover:border-[rgba(136,117,255,0.36)] hover:bg-white/[0.045]"
+      >
+        <div>
+          <p className="font-mono-tech text-[10px] tracking-widest text-[#8875FF]/75">NEW DREAM</p>
+          <p className="mt-1 font-serif-dream text-[16px] text-white">新建梦境档案</p>
+          <p className="mt-1 text-[12px] text-white/35">继续述说新的梦境，解析完成后会保存到历史记录并关联生成卡片。</p>
+        </div>
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#8875FF]/20 text-[#8875FF] transition-all group-hover:bg-[#8875FF]/30">
+          <Plus className="h-4 w-4" />
+        </div>
+      </button>
+
+      <div className="flex items-center justify-between">
+        <span className="font-mono-tech text-[10px] text-white/25 tracking-wider">历史梦境档案 · {records.length} 条</span>
+      </div>
+
+      {records.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center py-14 text-center">
+          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[rgba(136,117,255,0.14)] bg-[rgba(136,117,255,0.07)]">
+            <ImageIcon className="h-5 w-5 text-[#8875FF]/35" />
+          </div>
+          <h3 className="mb-2 font-serif-dream text-[16px] text-white/70">还没有梦境档案</h3>
+          <p className="mb-6 max-w-xs text-[13px] leading-relaxed text-white/30">先新建一条梦境档案，生成的卡片会自动出现在这里。</p>
+          <button
+            type="button"
+            onClick={startNewDream}
+            className="rounded-full bg-[#8875FF] px-6 py-2.5 text-[12px] font-semibold text-white shadow-lg shadow-[#8875FF]/20 transition-colors hover:bg-[#9A88FF]"
+          >
+            开始述梦
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {records.slice(0, 12).map((record) => (
+            <DreamerArchiveItem key={record.id} record={record} card={cardByRecordId.get(record.id)} onOpen={openRecord} />
+          ))}
+        </div>
+      )}
     </div>
   );
 
