@@ -16,6 +16,7 @@ const EMOTION_OPTIONS = [
 ];
 
 interface DreamerArchiveCard {
+  id?: string;
   dreamRecordId?: string | null;
   title: string;
   imageUrl?: string;
@@ -123,6 +124,17 @@ export function DreamerScreen() {
       });
 
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const handleDeleted = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      setCardHistory(prev => prev.filter(card => card.id !== id));
+    };
+
+    window.addEventListener("dream-card-deleted", handleDeleted);
+    return () => window.removeEventListener("dream-card-deleted", handleDeleted);
   }, []);
 
   // 每次从欢迎页进入（包括导航栏点「述梦」）都重置为欢迎态并清空内容

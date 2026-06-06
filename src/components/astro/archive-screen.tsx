@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Brain, ChevronRight, Star, Trash2, ChevronLeft, Plus, ImageIcon, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
@@ -27,6 +27,14 @@ interface WeeklyAnalysis {
   suggestions: string[];
   gentle_warning: string;
   disclaimer: string;
+}
+
+interface WeeklyReport {
+  analysis: WeeklyAnalysis | null;
+  dreamCount: number;
+  weekStart: string;
+  weekEnd: string;
+  generatedAt?: string;
 }
 
 const PROXIED_IMAGE_HOSTS = new Set([
@@ -70,6 +78,24 @@ function startOfMonth(year: number, month: number): Date {
 
 function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
+}
+
+function startOfWeek(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return d;
+}
+
+function addDays(date: Date, days: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function formatShortDate(date: Date) {
+  return `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
 }
 
 const WEEKDAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -148,13 +174,15 @@ export function ArchiveScreen() {
   const [mounted, setMounted] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [weekOffset, setWeekOffset] = useState(0);
   const [cardHistory, setCardHistory] = useState<ArchiveCard[]>([]);
   const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAnalysis | null>(null);
   const [weeklyDreamCount, setWeeklyDreamCount] = useState<number | null>(null);
+  const [weeklyGeneratedAt, setWeeklyGeneratedAt] = useState<string | null>(null);
   const [isWeeklyLoading, setIsWeeklyLoading] = useState(false);
   const [weeklyError, setWeeklyError] = useState<string | null>(null);
 
-  const today = new Date();
+  const today = useMemo(() => new Date(), []);
   const [calYear, setCalYear] = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth());
 
@@ -181,22 +209,42 @@ export function ArchiveScreen() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const handleDeleted = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      setCardHistory(prev => prev.filter(card => card.id !== id));
+    };
+
+    window.addEventListener("dream-card-deleted", handleDeleted);
+    return () => window.removeEventListener("dream-card-deleted", handleDeleted);
+  }, []);
+
   /* 所有记录日期（用于日历标点） */
   const recordDates = useMemo(() =>
     records.map(r => { const d = parseRecordDate(r.date); d.setHours(0,0,0,0); return d; }),
   [records]);
 
-  /* 近30天 + 按时间倒序，如果选中了某天则只显示那天 */
+  const weekRange = useMemo(() => {
+    const start = addDays(startOfWeek(today), -weekOffset * 7);
+    return { start, end: addDays(start, 7) };
+  }, [today, weekOffset]);
+
+  const weekLabel = `${formatShortDate(weekRange.start)} - ${formatShortDate(addDays(weekRange.end, -1))}`;
+
+  /* 一周一页 + 按时间倒序，如果选中了某天则只显示那天 */
   const filteredRecords = useMemo(() => {
-    const now = Date.now();
     if (selectedDate) {
       return records.filter(r => isSameDay(parseRecordDate(r.date), selectedDate))
         .sort((a, b) => parseRecordDate(b.date).getTime() - parseRecordDate(a.date).getTime());
     }
     return records
-      .filter(r => (now - parseRecordDate(r.date).getTime()) / 86400000 <= 30)
+      .filter(r => {
+        const time = parseRecordDate(r.date).getTime();
+        return time >= weekRange.start.getTime() && time < weekRange.end.getTime();
+      })
       .sort((a, b) => parseRecordDate(b.date).getTime() - parseRecordDate(a.date).getTime());
-  }, [records, selectedDate]);
+  }, [records, selectedDate, weekRange]);
 
   const cardByRecordId = useMemo(() => {
     const map = new Map<string, ArchiveCard>();
@@ -216,42 +264,73 @@ export function ArchiveScreen() {
     router.push("/parser");
   };
 
+  const confirmDeleteRecord = (record: DreamRecord) => {
+    deleteDream(record.id);
+    setCardHistory(prev => prev.map(card => (
+      card.dreamRecordId === record.id ? { ...card, dreamRecordId: null } : card
+    )));
+    setDeletingId(null);
+  };
+
+  const applyWeeklyReport = (data: WeeklyReport) => {
+    setWeeklyAnalysis(data.analysis ?? null);
+    setWeeklyDreamCount(typeof data.dreamCount === "number" ? data.dreamCount : null);
+    setWeeklyGeneratedAt(data.generatedAt ?? null);
+  };
+
+  const loadWeeklyAnalysis = async () => {
+    setIsWeeklyLoading(true);
+    setWeeklyError(null);
+
+    try {
+      const response = await fetch("/api/dream/weekly-analysis", { method: "GET" });
+      const data = await response.json().catch(() => ({})) as WeeklyReport & { error?: string };
+
+      if (!response.ok) throw new Error(data.error ?? "读取近一周梦境周报失败");
+      applyWeeklyReport(data);
+    } catch (err) {
+      setWeeklyError(err instanceof Error ? err.message : "读取近一周梦境周报失败");
+    } finally {
+      setIsWeeklyLoading(false);
+    }
+  };
+
   const runWeeklyAnalysis = async () => {
     setIsWeeklyLoading(true);
     setWeeklyError(null);
 
     try {
       const response = await fetch("/api/dream/weekly-analysis", { method: "POST" });
-      const data = await response.json().catch(() => ({})) as {
-        analysis?: WeeklyAnalysis | null;
-        dreamCount?: number;
-        error?: string;
-      };
+      const data = await response.json().catch(() => ({})) as WeeklyReport & { error?: string };
 
-      if (!response.ok) throw new Error(data.error ?? "生成近一周梦境分析失败");
-
-      setWeeklyAnalysis(data.analysis ?? null);
-      setWeeklyDreamCount(typeof data.dreamCount === "number" ? data.dreamCount : null);
+      if (!response.ok) throw new Error(data.error ?? "生成近一周梦境周报失败");
+      applyWeeklyReport(data);
     } catch (err) {
-      setWeeklyError(err instanceof Error ? err.message : "生成近一周梦境分析失败");
+      setWeeklyError(err instanceof Error ? err.message : "生成近一周梦境周报失败");
     } finally {
       setIsWeeklyLoading(false);
     }
   };
 
-  const prevMonth = useCallback(() => {
+  useEffect(() => {
+    if (!mounted) return;
+    void loadWeeklyAnalysis();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
+
+  const prevMonth = () => {
     if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
     else setCalMonth(m => m - 1);
     setSelectedDate(null);
-  }, [calMonth]);
+  };
 
-  const nextMonth = useCallback(() => {
+  const nextMonth = () => {
     const now = new Date();
     if (calYear > now.getFullYear() || (calYear === now.getFullYear() && calMonth >= now.getMonth())) return;
     if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
     else setCalMonth(m => m + 1);
     setSelectedDate(null);
-  }, [calMonth, calYear]);
+  };
 
   const isAtCurrentMonth = calYear === today.getFullYear() && calMonth === today.getMonth();
 
@@ -293,7 +372,7 @@ export function ArchiveScreen() {
               </div>
               <h3 className="mt-1 font-serif-dream text-[16px] text-white">近一周梦境周报</h3>
               <p className="mt-1 text-[12px] leading-relaxed text-white/35">
-                汇总近 7 天梦境，观察情绪趋势、重复意象与自我意识线索。
+                每周一自动更新上周梦境，报告会固定保存。
               </p>
             </div>
             <motion.button
@@ -309,8 +388,8 @@ export function ArchiveScreen() {
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-3 w-3" />
-                  生成周报
+                  {weeklyAnalysis ? <RefreshCw className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+                  {weeklyAnalysis ? "重新生成" : "生成周报"}
                 </>
               )}
             </motion.button>
@@ -324,7 +403,7 @@ export function ArchiveScreen() {
 
           {weeklyDreamCount === 0 ? (
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-[12px] text-white/35">
-              近 7 天暂无可分析梦境。先记录一条梦境，再回来生成周报。
+              本周期暂无可分析梦境。先记录一条梦境，再回来查看周报。
             </div>
           ) : null}
 
@@ -341,42 +420,40 @@ export function ArchiveScreen() {
                 <span className="rounded-full border border-white/[0.06] bg-white/[0.035] px-2.5 py-1 font-mono-tech text-[9px] text-white/32">
                   {weeklyAnalysis.dreamCount} 条梦境
                 </span>
+                {weeklyGeneratedAt ? (
+                  <span className="rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 font-mono-tech text-[9px] text-white/24">
+                    {new Date(weeklyGeneratedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                ) : null}
               </div>
+
+              <p className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3 font-serif-dream text-[13px] leading-relaxed text-white/62">
+                {weeklyAnalysis.current_state}
+              </p>
 
               <div className="grid gap-2 md:grid-cols-2">
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-[#2DD4BF]/65">当前状态</p>
-                  <p className="font-serif-dream text-[13px] leading-relaxed text-white/62">{weeklyAnalysis.current_state}</p>
+                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-[#2DD4BF]/65">自我意识</p>
+                  <p className="text-[12px] leading-relaxed text-white/52">{weeklyAnalysis.self_awareness}</p>
                 </div>
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-[#C9963A]/65">自我意识线索</p>
-                  <p className="font-serif-dream text-[13px] leading-relaxed text-white/62">{weeklyAnalysis.self_awareness}</p>
+                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-[#C9963A]/65">现实映照</p>
+                  <p className="text-[12px] leading-relaxed text-white/52">{weeklyAnalysis.reality_reflection}</p>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-1.5">
-                {weeklyAnalysis.recurring_symbols.map((symbol) => (
+                {weeklyAnalysis.recurring_symbols.slice(0, 3).map((symbol) => (
                   <span key={symbol} className="rounded-full border border-[rgba(136,117,255,0.18)] bg-[rgba(136,117,255,0.07)] px-2.5 py-1 font-mono-tech text-[9px] text-[#8875FF]/75">
                     #{symbol}
                   </span>
                 ))}
               </div>
 
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-white/30">情绪模式</p>
-                  <p className="text-[12px] leading-relaxed text-white/52">{weeklyAnalysis.emotion_pattern}</p>
-                </div>
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-white/30">现实映照</p>
-                  <p className="text-[12px] leading-relaxed text-white/52">{weeklyAnalysis.reality_reflection}</p>
-                </div>
-              </div>
-
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
                 <p className="mb-2 font-mono-tech text-[9px] tracking-widest text-white/30">本周建议</p>
                 <div className="space-y-1.5">
-                  {weeklyAnalysis.suggestions.map((suggestion, index) => (
+                  {weeklyAnalysis.suggestions.slice(0, 2).map((suggestion, index) => (
                     <p key={`${suggestion}-${index}`} className="text-[12px] leading-relaxed text-white/55">
                       {index + 1}. {suggestion}
                     </p>
@@ -385,7 +462,7 @@ export function ArchiveScreen() {
               </div>
 
               <div className="space-y-1.5 text-[11px] leading-relaxed text-white/28">
-                <p>{weeklyAnalysis.gentle_warning}</p>
+                <p>{weeklyAnalysis.emotion_pattern} {weeklyAnalysis.gentle_warning}</p>
                 <p>{weeklyAnalysis.disclaimer}</p>
               </div>
             </motion.div>
@@ -432,7 +509,7 @@ export function ArchiveScreen() {
         <span className="font-mono-tech text-[10px] text-white/25 tracking-wider">
           {selectedDate
             ? `${selectedDate.getMonth() + 1} 月 ${selectedDate.getDate()} 日 · ${filteredRecords.length} 条`
-            : `近 30 天 · ${filteredRecords.length} 条`}
+            : `${weekOffset === 0 ? "本周" : `${weekOffset + 1} 周前`} · ${weekLabel} · ${filteredRecords.length} 条`}
         </span>
         {selectedDate && (
           <button onClick={() => setSelectedDate(null)}
@@ -449,7 +526,7 @@ export function ArchiveScreen() {
             <Star className="w-5 h-5 text-[#8875FF]/30" />
           </div>
           <p className="font-serif-dream text-[14px] text-white/40 mb-2">
-            {selectedDate ? "这天还没有梦境记录" : "近 30 天暂无梦境记录"}
+            {selectedDate ? "这天还没有梦境记录" : "这一周暂无梦境记录"}
           </p>
           <p className="text-[12px] text-white/20 mb-5">解析梦境后将自动保存到档案</p>
           <Link href="/?reset=true"
@@ -482,7 +559,7 @@ export function ArchiveScreen() {
                         flex items-center justify-center gap-3 border border-red-500/20"
                     >
                       <span className="text-[12px] text-white/60 font-serif-dream">确认删除？</span>
-                      <button onClick={(e) => { e.stopPropagation(); deleteDream(rec.id); setDeletingId(null); }}
+                      <button onClick={(e) => { e.stopPropagation(); confirmDeleteRecord(rec); }}
                         className="px-3 py-1 rounded-lg bg-red-500/15 text-red-300 text-[11px] border border-red-500/20 hover:bg-red-500/25 transition-all">
                         删除
                       </button>
@@ -554,6 +631,29 @@ export function ArchiveScreen() {
           </AnimatePresence>
         </div>
       )}
+
+      {!selectedDate ? (
+        <div className="flex items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.025] px-4 py-3" onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={() => setWeekOffset((value) => value + 1)}
+            className="flex items-center gap-1.5 rounded-full border border-white/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-white/36 transition-all hover:border-[rgba(136,117,255,0.24)] hover:text-white/65"
+          >
+            <ChevronLeft className="h-3 w-3" />
+            上一周
+          </button>
+          <span className="font-mono-tech text-[9px] text-white/20">{weekLabel}</span>
+          <button
+            type="button"
+            disabled={weekOffset === 0}
+            onClick={() => setWeekOffset((value) => Math.max(0, value - 1))}
+            className="flex items-center gap-1.5 rounded-full border border-white/[0.08] px-3 py-1.5 font-mono-tech text-[10px] text-white/36 transition-all hover:border-[rgba(136,117,255,0.24)] hover:text-white/65 disabled:cursor-not-allowed disabled:opacity-25"
+          >
+            下一周
+            <ChevronRight className="h-3 w-3" />
+          </button>
+        </div>
+      ) : null}
 
       {/* ── 底部 ── */}
       <div className="mt-1 pt-4 border-t border-white/[0.05] flex justify-between items-center">

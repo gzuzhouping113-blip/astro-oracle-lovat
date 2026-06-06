@@ -64,3 +64,16 @@ create table if not exists dream_cards (
 
 create index if not exists dream_cards_user_created_idx on dream_cards(user_id, created_at desc);
 
+create table if not exists dream_weekly_reports (
+  user_id text not null references users(id) on delete cascade,
+  week_start date not null,
+  week_end date not null,
+  analysis_json jsonb,
+  dream_count integer not null default 0,
+  generated_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, week_start)
+);
+
+create index if not exists dream_weekly_reports_user_generated_idx
+  on dream_weekly_reports(user_id, generated_at desc);

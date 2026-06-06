@@ -1,8 +1,7 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Download, RefreshCw, Moon, ImageIcon, Share2, BookOpen, Brain, Cpu } from "lucide-react";
-import { toBlob } from "html-to-image";
+import { Download, RefreshCw, ImageIcon, Share2, BookOpen, Brain, Cpu, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useDream } from "@/components/astro/dream-context";
@@ -59,39 +58,6 @@ function sanitizeFileName(value: string) {
   return value.trim().replace(/[\\/:*?"<>|]/g, "-").slice(0, 80) || "dream-card";
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number) {
-  return Promise.race<T | null>([
-    promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
-  ]);
-}
-
-async function waitForImages(node: HTMLElement) {
-  const images = Array.from(node.querySelectorAll("img"));
-  await Promise.all(
-    images.map((image) => {
-      if (image.complete) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        image.addEventListener("load", () => resolve(), { once: true });
-        image.addEventListener("error", () => resolve(), { once: true });
-      });
-    }),
-  );
-}
-
-async function waitForCardNode(getNode: () => HTMLDivElement | null) {
-  for (let i = 0; i < 50; i += 1) {
-    const node = getNode();
-    if (node) return node;
-    await wait(50);
-  }
-  throw new Error("卡片还没渲染完成，请稍后再试");
-}
-
 function downloadBlob(blob: Blob, card: CardData) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -104,153 +70,11 @@ function downloadBlob(blob: Blob, card: CardData) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines: number) {
-  const chars = Array.from(text);
-  const lines: string[] = [];
-  let line = "";
-
-  chars.forEach((char) => {
-    const testLine = line + char;
-    if (ctx.measureText(testLine).width > maxWidth && line) {
-      lines.push(line);
-      line = char;
-    } else {
-      line = testLine;
-    }
-  });
-  if (line) lines.push(line);
-
-  lines.slice(0, maxLines).forEach((current, index) => {
-    const suffix = index === maxLines - 1 && lines.length > maxLines ? "..." : "";
-    ctx.fillText(current + suffix, x, y + index * lineHeight);
-  });
-}
-
-function loadCanvasImage(src: string) {
-  return new Promise<HTMLImageElement | null>((resolve) => {
-    if (!src) {
-      resolve(null);
-      return;
-    }
-    const image = new Image();
-    image.crossOrigin = "anonymous";
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
-    image.src = src.startsWith("/") ? new URL(src, window.location.origin).toString() : src;
-  });
-}
-
-async function renderCardFallbackBlob(card: CardData) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 900;
-  canvas.height = 1200;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("浏览器暂不支持卡片下载");
-
-  const image = await loadCanvasImage(getDisplayImageUrl(card.imageUrl));
-  if (image) {
-    const scale = Math.max(canvas.width / image.width, canvas.height / image.height);
-    const width = image.width * scale;
-    const height = image.height * scale;
-    ctx.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
-  } else {
-    const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    bg.addColorStop(0, "#1a1050");
-    bg.addColorStop(0.5, "#0e0a28");
-    bg.addColorStop(1, "#07050f");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-
-  const overlay = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  overlay.addColorStop(0, "rgba(14,10,32,0.18)");
-  overlay.addColorStop(0.48, "rgba(10,7,28,0.36)");
-  overlay.addColorStop(1, "rgba(7,5,15,0.95)");
-  ctx.fillStyle = overlay;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "rgba(9,7,26,0.68)";
-  ctx.strokeStyle = "rgba(255,255,255,0.12)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.roundRect(48, 48, 190, 42, 21);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.72)";
-  ctx.font = "18px monospace";
-  ctx.fillText(SITE_NAME, 86, 75);
-
-  ctx.fillStyle = "rgba(18,14,50,0.78)";
-  ctx.strokeStyle = "rgba(136,117,255,0.24)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.roundRect(56, 760, 788, 360, 34);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "#A897FF";
-  ctx.font = "54px serif";
-  ctx.fillText(card.symbol_emoji || "*", 96, 840);
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = "bold 38px serif";
-  wrapCanvasText(ctx, card.title, 170, 836, 610, 44, 2);
-
-  ctx.fillStyle = "rgba(228,225,245,0.82)";
-  ctx.font = "26px serif";
-  wrapCanvasText(ctx, card.short_reading, 96, 920, 710, 36, 3);
-
-  ctx.strokeStyle = "rgba(255,255,255,0.10)";
-  ctx.beginPath();
-  ctx.moveTo(96, 1020);
-  ctx.lineTo(804, 1020);
-  ctx.stroke();
-
-  ctx.fillStyle = "#C9963A";
-  ctx.font = "18px monospace";
-  ctx.fillText("东方", 96, 1060);
-  ctx.fillStyle = "rgba(228,225,245,0.70)";
-  ctx.font = "22px serif";
-  wrapCanvasText(ctx, card.east_tip, 96, 1094, 320, 28, 2);
-
-  ctx.fillStyle = "#2DD4BF";
-  ctx.font = "18px monospace";
-  ctx.fillText("心理", 500, 1060);
-  ctx.fillStyle = "rgba(228,225,245,0.70)";
-  ctx.font = "22px serif";
-  wrapCanvasText(ctx, card.west_tip, 500, 1094, 304, 28, 2);
-
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("卡片生成失败，请稍后再试"));
-    }, "image/png");
-  });
-}
-
-async function downloadCard(node: HTMLElement, card: CardData) {
-  await withTimeout(document.fonts.ready, 1200);
-  await withTimeout(waitForImages(node), 1400);
-  await wait(100);
-
-  try {
-    const blob = await withTimeout(
-      toBlob(node, {
-        cacheBust: true,
-        pixelRatio: 3,
-        backgroundColor: "#09071A",
-        skipFonts: true,
-      }),
-      2600,
-    );
-    if (blob) {
-      downloadBlob(blob, card);
-      return;
-    }
-  } catch (err) {
-    console.warn("DOM card download failed, using canvas fallback:", err);
-  }
-
-  downloadBlob(await renderCardFallbackBlob(card), card);
+async function downloadPureImage(card: CardData) {
+  if (!card.imageUrl) throw new Error("这张卡片还没有图片");
+  const response = await fetch(getDisplayImageUrl(card.imageUrl), { cache: "no-store" });
+  if (!response.ok) throw new Error("图片下载失败，请稍后再试");
+  downloadBlob(await response.blob(), card);
 }
 
 export function CardScreen() {
@@ -263,7 +87,7 @@ export function CardScreen() {
   const [viewMode, setViewMode] = useState<"card"|"detail">("card");
   const [isDownloading, setIsDownloading] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
-  const cardDownloadRef = useRef<HTMLDivElement | null>(null);
+  const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
 
   // 从档案选中的梦境数据（一次性原子更新，避免多 state 异步问题）
   const [activeDream, setActiveDream] = useState<{
@@ -401,6 +225,26 @@ export function CardScreen() {
     });
   };
 
+  const deleteCard = async (target: CardData) => {
+    if (!target.id) return;
+    const previousHistory = history;
+    const previousCard = card;
+    setHistory(prev => prev.filter(item => item.id !== target.id));
+    if (card?.id === target.id) setCard(null);
+    setDeletingCardId(null);
+
+    try {
+      const response = await fetch(`/api/dream/cards/${encodeURIComponent(target.id)}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      window.dispatchEvent(new CustomEvent("dream-card-deleted", { detail: { id: target.id } }));
+    } catch (err) {
+      console.error("Delete card error:", err);
+      setHistory(previousHistory);
+      setCard(previousCard);
+      setError("删除卡片失败，请稍后再试");
+    }
+  };
+
   return (
     <div className="w-full flex-1 flex flex-col gap-5">
       {displayCard && !isGenerating && canGenerateCard ? (
@@ -496,53 +340,54 @@ export function CardScreen() {
 
                 ) : displayCard && viewMode === "card" ? (
                   <motion.div key={`card-${displayCard.createdAt}`}
-                    ref={cardDownloadRef}
                     initial={{opacity:0,scale:0.96}} animate={{opacity:1,scale:1}} transition={{duration:0.4}}
-                    className={`w-full aspect-[3/4] rounded-2xl border ${THEME[displayCard.color_theme??"violet"].border} overflow-hidden relative shadow-2xl`}
+                    className={`group relative w-full aspect-square overflow-hidden rounded-2xl border ${THEME[displayCard.color_theme??"violet"].border} bg-black/20 shadow-2xl`}
                   >
                     {displayCard.imageUrl
-                      ? <img src={getDisplayImageUrl(displayCard.imageUrl)} alt="梦境意象" crossOrigin="anonymous" className="absolute inset-0 w-full h-full object-cover" />
-                      : <div className="absolute inset-0 bg-gradient-to-b from-[#1a1050] via-[#0e0a28] to-[#07050f]" />
+                      ? <img src={getDisplayImageUrl(displayCard.imageUrl)} alt="梦境意象" crossOrigin="anonymous" className="h-full w-full object-cover" />
+                      : <div className="flex h-full w-full items-center justify-center bg-gradient-to-b from-[#1a1050] via-[#0e0a28] to-[#07050f]">
+                          <ImageIcon className="h-8 w-8 text-white/20" />
+                        </div>
                     }
-                    {/* gradient overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[rgba(7,5,15,0.95)] via-[rgba(10,7,28,0.35)] to-[rgba(14,10,32,0.18)]" />
+                    {displayCard.id ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setDeletingCardId(displayCard.id ?? null); }}
+                        className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-red-400/20 bg-black/45 text-red-200 opacity-0 backdrop-blur-md transition-all hover:bg-red-500/20 group-hover:opacity-100 focus-visible:opacity-100"
+                        aria-label="删除卡片"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
 
-                    {/* top bar */}
-                    <div className="absolute top-0 left-0 right-0 p-3.5 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 bg-[rgba(9,7,26,0.6)] backdrop-blur-md px-2.5 py-1 rounded-full border border-[rgba(255,255,255,0.1)]">
-                        <Moon className="w-2.5 h-2.5 text-[#8875FF]" />
-                        <span className="font-mono-tech text-[8px] text-white/65 tracking-widest">{SITE_NAME}</span>
-                      </div>
-                      <span className={`font-mono-tech text-[9px] px-2 py-0.5 rounded-full border backdrop-blur-md ${THEME[displayCard.color_theme??"violet"].tag}`}>
-                        {displayCard.emotion.split(" / ")[0]}
-                      </span>
-                    </div>
-
-                    {/* bottom content */}
-                    <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col gap-2.5">
-                      <div className="flex flex-wrap gap-1.5">
-                        {interpretation?.keywords?.slice(0,3).map((kw: string,i: number)=>(
-                          <span key={i} className={`font-mono-tech text-[8px] px-2 py-0.5 rounded-full border backdrop-blur-sm ${THEME[displayCard.color_theme??"violet"].tag}`}>#{kw}</span>
-                        ))}
-                      </div>
-                      <div className="bg-[rgba(18,14,50,0.7)] backdrop-blur-lg rounded-2xl p-3.5 border border-[rgba(136,117,255,0.2)]">
-                        <div className="flex items-center gap-2.5 mb-2">
-                          <span className={`text-2xl font-serif-dream leading-none ${THEME[displayCard.color_theme??"violet"].accent}`}>{displayCard.symbol_emoji}</span>
-                          <h3 className="font-serif-dream text-[14px] text-white leading-tight">{displayCard.title}</h3>
-                        </div>
-                        <p className="text-[11px] text-[rgba(228,225,245,0.78)] leading-relaxed mb-3">{displayCard.short_reading}</p>
-                        <div className="grid grid-cols-2 gap-2 pt-2.5 border-t border-[rgba(255,255,255,0.08)]">
-                          <div>
-                            <p className="font-mono-tech text-[8px] text-[#C9963A]/70 mb-0.5">东方</p>
-                            <p className="text-[10px] text-[rgba(228,225,245,0.65)] leading-tight">{displayCard.east_tip}</p>
+                    <AnimatePresence>
+                      {displayCard.id && deletingCardId === displayCard.id ? (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[rgba(9,7,26,0.82)] p-5 text-center backdrop-blur-sm"
+                        >
+                          <p className="font-serif-dream text-[14px] text-white/80">确认删除这张卡片？</p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => deleteCard(displayCard)}
+                              className="rounded-lg border border-red-500/25 bg-red-500/15 px-4 py-1.5 text-[12px] text-red-200 transition-all hover:bg-red-500/25"
+                            >
+                              删除
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingCardId(null)}
+                              className="rounded-lg border border-white/[0.1] bg-white/[0.06] px-4 py-1.5 text-[12px] text-white/45 transition-all hover:bg-white/[0.1]"
+                            >
+                              取消
+                            </button>
                           </div>
-                          <div>
-                            <p className="font-mono-tech text-[8px] text-[#2DD4BF]/70 mb-0.5">心理</p>
-                            <p className="text-[10px] text-[rgba(228,225,245,0.65)] leading-tight">{displayCard.west_tip}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
                   </motion.div>
 
                 ) : displayCard && viewMode === "detail" ? (
@@ -686,10 +531,8 @@ export function CardScreen() {
                     try {
                       if (viewMode !== "card") {
                         setViewMode("card");
-                        await wait(120);
                       }
-                      const node = await waitForCardNode(() => cardDownloadRef.current);
-                      await downloadCard(node, displayCard);
+                      await downloadPureImage(displayCard);
                     } catch (err) {
                       setError(err instanceof Error ? err.message : "下载失败，请稍后再试");
                     } finally {
@@ -718,30 +561,69 @@ export function CardScreen() {
               <p className="font-mono-tech text-[9px] text-[#3E3C50] uppercase tracking-widest mb-3">历史梦境卡片</p>
               <div className="flex gap-3 overflow-x-auto pb-2">
                 {history.map((h, i) => (
-                  <motion.button key={h.createdAt}
+                  <motion.div key={h.id ?? h.createdAt}
                     initial={{opacity:0,scale:0.9}} animate={{opacity:1,scale:1}} transition={{delay:i*0.04}}
-                    onClick={() => selectHistoryCard(h)}
-                    className="shrink-0 w-[72px] flex flex-col gap-1 group"
+                    className="group relative flex w-[72px] shrink-0 flex-col gap-1"
                   >
-                    <div className={`w-[72px] h-24 rounded-xl overflow-hidden border relative transition-all ${
-                      displayCard?.createdAt === h.createdAt
-                        ? "border-[#8875FF] ring-1 ring-[#8875FF]/30"
-                        : "border-[rgba(136,117,255,0.12)] group-hover:border-[rgba(136,117,255,0.28)]"
-                    }`}>
-                      {h.imageUrl
-                        ? <img src={getDisplayImageUrl(h.imageUrl)} alt={h.title} crossOrigin="anonymous" className="w-full h-full object-cover" />
-                        : <div className="w-full h-full bg-gradient-to-b from-[#1a1050] to-[#07050f] flex items-center justify-center">
-                            <span className="text-lg font-serif-dream text-white/30">{h.symbol_emoji}</span>
-                          </div>
-                      }
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-1.5">
-                        <span className="font-serif-dream text-[8px] text-white/85 leading-tight line-clamp-2">{h.title}</span>
+                    <button type="button" onClick={() => selectHistoryCard(h)} className="text-left">
+                      <div className={`w-[72px] h-24 rounded-xl overflow-hidden border relative transition-all ${
+                        displayCard?.createdAt === h.createdAt
+                          ? "border-[#8875FF] ring-1 ring-[#8875FF]/30"
+                          : "border-[rgba(136,117,255,0.12)] group-hover:border-[rgba(136,117,255,0.28)]"
+                      }`}>
+                        {h.imageUrl
+                          ? <img src={getDisplayImageUrl(h.imageUrl)} alt={h.title} crossOrigin="anonymous" className="w-full h-full object-cover" />
+                          : <div className="w-full h-full bg-gradient-to-b from-[#1a1050] to-[#07050f] flex items-center justify-center">
+                              <span className="text-lg font-serif-dream text-white/30">{h.symbol_emoji}</span>
+                            </div>
+                        }
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent flex items-end p-1.5">
+                          <span className="font-serif-dream text-[8px] text-white/85 leading-tight line-clamp-2">{h.title}</span>
+                        </div>
                       </div>
-                    </div>
+                    </button>
+                    {h.id ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setDeletingCardId(h.id ?? null); }}
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full border border-red-400/20 bg-black/60 text-red-200 opacity-0 backdrop-blur transition-all hover:bg-red-500/20 group-hover:opacity-100 focus-visible:opacity-100"
+                        aria-label="删除卡片"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    ) : null}
+                    <AnimatePresence>
+                      {h.id && deletingCardId === h.id ? (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="absolute inset-x-0 top-0 z-10 flex h-24 flex-col items-center justify-center gap-1 rounded-xl bg-[rgba(9,7,26,0.88)] p-1.5 text-center backdrop-blur-sm"
+                        >
+                          <span className="text-[10px] text-white/70">删除？</span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => deleteCard(h)}
+                              className="rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] text-red-100"
+                            >
+                              是
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingCardId(null)}
+                              className="rounded bg-white/[0.08] px-1.5 py-0.5 text-[9px] text-white/55"
+                            >
+                              否
+                            </button>
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
                     <span className="font-mono-tech text-[8px] text-[#3E3C50] text-center">
                       {new Date(h.createdAt).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}
                     </span>
-                  </motion.button>
+                  </motion.div>
                 ))}
               </div>
             </div>

@@ -13,21 +13,15 @@ export async function DELETE(
     const sql = getSql();
 
     await sql`
-      update dream_records
+      update dream_cards
       set deleted_at = now(), updated_at = now()
       where id = ${id} and user_id = ${user.id}
-    `;
-
-    await sql`
-      update dream_cards
-      set dream_record_id = null, updated_at = now()
-      where dream_record_id = ${id} and user_id = ${user.id}
     `;
 
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof Response) return err;
-    console.error("Delete record error:", err);
-    return Response.json({ error: "删除梦境档案失败" }, { status: 500 });
+    console.error("Delete card error:", err);
+    return Response.json({ error: "删除梦境卡片失败" }, { status: 500 });
   }
 }
