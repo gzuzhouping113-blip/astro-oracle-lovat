@@ -286,10 +286,10 @@ export function ArchiveScreen() {
       const response = await fetch("/api/dream/weekly-analysis", { method: "GET" });
       const data = await response.json().catch(() => ({})) as WeeklyReport & { error?: string };
 
-      if (!response.ok) throw new Error(data.error ?? "读取近一周梦境周报失败");
+      if (!response.ok) throw new Error(data.error ?? "读取本周梦境周报失败");
       applyWeeklyReport(data);
     } catch (err) {
-      setWeeklyError(err instanceof Error ? err.message : "读取近一周梦境周报失败");
+      setWeeklyError(err instanceof Error ? err.message : "读取本周梦境周报失败");
     } finally {
       setIsWeeklyLoading(false);
     }
@@ -303,10 +303,10 @@ export function ArchiveScreen() {
       const response = await fetch("/api/dream/weekly-analysis", { method: "POST" });
       const data = await response.json().catch(() => ({})) as WeeklyReport & { error?: string };
 
-      if (!response.ok) throw new Error(data.error ?? "生成近一周梦境周报失败");
+      if (!response.ok) throw new Error(data.error ?? "生成本周梦境周报失败");
       applyWeeklyReport(data);
     } catch (err) {
-      setWeeklyError(err instanceof Error ? err.message : "生成近一周梦境周报失败");
+      setWeeklyError(err instanceof Error ? err.message : "生成本周梦境周报失败");
     } finally {
       setIsWeeklyLoading(false);
     }
@@ -370,9 +370,9 @@ export function ArchiveScreen() {
                 <Brain className="h-4 w-4 text-[#2DD4BF]" />
                 <p className="font-mono-tech text-[10px] tracking-widest text-[#2DD4BF]/75">WEEKLY SIGNAL</p>
               </div>
-              <h3 className="mt-1 font-serif-dream text-[16px] text-white">近一周梦境周报</h3>
+              <h3 className="mt-1 font-serif-dream text-[16px] text-white">本周梦境周报</h3>
               <p className="mt-1 text-[12px] leading-relaxed text-white/35">
-                每周一自动更新上周梦境，报告会固定保存。
+                统计本周一到今天；有新增梦境才会自动更新。
               </p>
             </div>
             <motion.button
@@ -403,7 +403,7 @@ export function ArchiveScreen() {
 
           {weeklyDreamCount === 0 ? (
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-[12px] text-white/35">
-              本周期暂无可分析梦境。先记录一条梦境，再回来查看周报。
+              本周暂无可分析梦境。先记录一条梦境，再回来查看周报。
             </div>
           ) : null}
 

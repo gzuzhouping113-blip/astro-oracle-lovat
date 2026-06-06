@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { generateText } from "@/lib/ai-text";
 import { requireUser } from "@/lib/auth/session";
 import { getSql } from "@/lib/db";
@@ -27,39 +26,66 @@ interface WeeklyReportRow {
   generated_at: string | Date;
 }
 
-function toDateOnly(date: Date) {
+interface DreamStatsRow {
+  dream_count: number | string;
+  latest_created_at: string | Date | null;
+}
+
+const SHANGHAI_TIME_ZONE = "Asia/Shanghai";
+
+const shanghaiDateFormatter = new Intl.DateTimeFormat("en", {
+  timeZone: SHANGHAI_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+function toShanghaiDateOnly(date: Date) {
+  const parts = shanghaiDateFormatter.formatToParts(date);
+  const year = parts.find(part => part.type === "year")?.value ?? "1970";
+  const month = parts.find(part => part.type === "month")?.value ?? "01";
+  const day = parts.find(part => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
+function dateOnlyFromDb(value: string | Date) {
+  return typeof value === "string" ? value.slice(0, 10) : toShanghaiDateOnly(value);
+}
+
+function dateOnlyToShanghaiStart(dateOnly: string) {
+  return new Date(`${dateOnly}T00:00:00+08:00`);
+}
+
+function addDaysToDateOnly(dateOnly: string, days: number) {
+  const date = new Date(`${dateOnly}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
 }
 
 function startOfShanghaiWeek(date = new Date()) {
-  const shanghaiNow = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
-  shanghaiNow.setHours(0, 0, 0, 0);
-  const day = shanghaiNow.getDay();
+  const dateOnly = toShanghaiDateOnly(date);
+  const noonUtc = new Date(`${dateOnly}T12:00:00Z`);
+  const day = noonUtc.getUTCDay();
   const diff = day === 0 ? -6 : 1 - day;
-  shanghaiNow.setDate(shanghaiNow.getDate() + diff);
-  return shanghaiNow;
+  return dateOnlyToShanghaiStart(addDaysToDateOnly(dateOnly, diff));
 }
 
-function getWeekRange(weekStartParam?: string | null) {
-  const defaultStart = startOfShanghaiWeek();
-  defaultStart.setDate(defaultStart.getDate() - 7);
-  const start = weekStartParam ? new Date(`${weekStartParam}T00:00:00+08:00`) : defaultStart;
-  if (Number.isNaN(start.getTime())) return getWeekRange(null);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 7);
-  return { start, end };
+function getCurrentWeekRange() {
+  const now = new Date();
+  return {
+    start: startOfShanghaiWeek(now),
+    end: now,
+    endDateOnly: toShanghaiDateOnly(now),
+  };
 }
 
 function formatPeriodLabel(start: Date, end: Date) {
   const fmt = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: SHANGHAI_TIME_ZONE,
     month: "2-digit",
     day: "2-digit",
   });
-  const inclusiveEnd = new Date(end);
-  inclusiveEnd.setDate(end.getDate() - 1);
-  return `${fmt.format(start)} - ${fmt.format(inclusiveEnd)}`;
+  return `${fmt.format(start)} - ${fmt.format(end)}`;
 }
 
 function parseJsonObject(raw: string) {
@@ -127,14 +153,53 @@ function normalizeAnalysis(raw: unknown, dreamCount: number, periodLabel: string
   };
 }
 
-function serializeReport(row: WeeklyReportRow) {
+function serializeReport(row: WeeklyReportRow, currentPeriodLabel?: string) {
+  const analysis = row.analysis_json
+    ? {
+        ...row.analysis_json,
+        periodLabel: currentPeriodLabel ?? row.analysis_json.periodLabel,
+      }
+    : null;
+
   return {
-    analysis: row.analysis_json,
+    analysis,
     dreamCount: row.dream_count,
-    weekStart: toDateOnly(new Date(row.week_start)),
-    weekEnd: toDateOnly(new Date(row.week_end)),
+    weekStart: dateOnlyFromDb(row.week_start),
+    weekEnd: dateOnlyFromDb(row.week_end),
     generatedAt: new Date(row.generated_at).toISOString(),
   };
+}
+
+async function getDreamStats({
+  userId,
+  weekStart,
+  weekEnd,
+}: {
+  userId: string;
+  weekStart: Date;
+  weekEnd: Date;
+}) {
+  const sql = getSql();
+  const rows = (await sql`
+    select count(*)::int as dream_count, max(created_at) as latest_created_at
+    from dream_records
+    where user_id = ${userId}
+      and deleted_at is null
+      and created_at >= ${weekStart.toISOString()}::timestamptz
+      and created_at < ${weekEnd.toISOString()}::timestamptz
+  `) as DreamStatsRow[];
+  const row = rows[0];
+
+  return {
+    dreamCount: Number(row?.dream_count ?? 0),
+    latestCreatedAt: row?.latest_created_at ? new Date(row.latest_created_at) : null,
+  };
+}
+
+function hasNewDreamSinceReport(cached: WeeklyReportRow, stats: { dreamCount: number; latestCreatedAt: Date | null }) {
+  if (stats.dreamCount > Number(cached.dream_count)) return true;
+  if (!stats.latestCreatedAt) return false;
+  return stats.latestCreatedAt.getTime() > new Date(cached.generated_at).getTime();
 }
 
 async function generateAndSaveReport({
@@ -147,6 +212,7 @@ async function generateAndSaveReport({
   weekEnd: Date;
 }) {
   const sql = getSql();
+  const stats = await getDreamStats({ userId, weekStart, weekEnd });
   const rows = (await sql`
     select id, emotion, dream_text, excerpt, symbols, coordinate_x, coordinate_y, interpretation_json, created_at
     from dream_records
@@ -193,7 +259,7 @@ JSON 格式：
 }`;
 
     const raw = await generateText({ system, prompt });
-    analysis = normalizeAnalysis(parseJsonObject(raw), records.length, periodLabel);
+    analysis = normalizeAnalysis(parseJsonObject(raw), stats.dreamCount, periodLabel);
   }
 
   const saved = (await sql`
@@ -201,8 +267,8 @@ JSON 格式：
       user_id, week_start, week_end, analysis_json, dream_count, generated_at, updated_at
     )
     values (
-      ${userId}, ${toDateOnly(weekStart)}::date, ${toDateOnly(weekEnd)}::date,
-      cast(${JSON.stringify(analysis)} as jsonb), ${records.length}, now(), now()
+      ${userId}, ${toShanghaiDateOnly(weekStart)}::date, ${toShanghaiDateOnly(weekEnd)}::date,
+      cast(${JSON.stringify(analysis)} as jsonb), ${stats.dreamCount}, now(), now()
     )
     on conflict (user_id, week_start) do update set
       week_end = excluded.week_end,
@@ -216,38 +282,46 @@ JSON 格式：
   return serializeReport(saved[0]);
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const user = await requireUser();
-    const url = new URL(request.url);
-    const { start, end } = getWeekRange(url.searchParams.get("weekStart"));
+    const { start, end, endDateOnly } = getCurrentWeekRange();
+    const currentPeriodLabel = formatPeriodLabel(start, end);
     const sql = getSql();
 
     const cached = (await sql`
       select week_start, week_end, analysis_json, dream_count, generated_at
       from dream_weekly_reports
-      where user_id = ${user.id} and week_start = ${toDateOnly(start)}::date
+      where user_id = ${user.id} and week_start = ${toShanghaiDateOnly(start)}::date
       limit 1
     `) as WeeklyReportRow[];
 
-    if (cached[0]) return Response.json(serializeReport(cached[0]));
+    const stats = await getDreamStats({ userId: user.id, weekStart: start, weekEnd: end });
+
+    if (cached[0] && !hasNewDreamSinceReport(cached[0], stats)) {
+      return Response.json({
+        ...serializeReport(cached[0], currentPeriodLabel),
+        dreamCount: cached[0].dream_count,
+        weekEnd: endDateOnly,
+      });
+    }
+
     return Response.json(await generateAndSaveReport({ userId: user.id, weekStart: start, weekEnd: end }));
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("Load weekly dream analysis error:", err);
-    return Response.json({ error: "读取近一周梦境周报失败" }, { status: 500 });
+    return Response.json({ error: "读取本周梦境周报失败" }, { status: 500 });
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const user = await requireUser();
-    const body = await request.json().catch(() => ({})) as { weekStart?: string };
-    const { start, end } = getWeekRange(body.weekStart);
+    const { start, end } = getCurrentWeekRange();
     return Response.json(await generateAndSaveReport({ userId: user.id, weekStart: start, weekEnd: end }));
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("Weekly dream analysis error:", err);
-    return Response.json({ error: "生成近一周梦境周报失败" }, { status: 500 });
+    return Response.json({ error: "生成本周梦境周报失败" }, { status: 500 });
   }
 }
