@@ -1,4 +1,3 @@
-import { NextRequest } from "next/server";
 import { generateText } from "@/lib/ai-text";
 import { requireUser } from "@/lib/auth/session";
 import { getSql } from "@/lib/db";
@@ -30,7 +29,6 @@ interface WeeklyReportRow {
 
 interface DreamStatsRow {
   dream_count: number | string;
-  latest_created_at: string | Date | null;
 }
 
 const SHANGHAI_TIME_ZONE = "Asia/Shanghai";
@@ -204,7 +202,7 @@ function normalizeAnalysis(raw: unknown, dreamCount: number, periodLabel: string
   };
 }
 
-function serializeReport(row: WeeklyReportRow, currentPeriodLabel?: string, needsRefresh = false) {
+function serializeReport(row: WeeklyReportRow, currentPeriodLabel?: string) {
   const analysis = row.analysis_json
     ? {
         ...row.analysis_json,
@@ -218,7 +216,6 @@ function serializeReport(row: WeeklyReportRow, currentPeriodLabel?: string, need
     weekStart: dateOnlyFromDb(row.week_start),
     weekEnd: dateOnlyFromDb(row.week_end),
     generatedAt: new Date(row.generated_at).toISOString(),
-    needsRefresh,
   };
 }
 
@@ -233,7 +230,7 @@ async function getDreamStats({
 }) {
   const sql = getSql();
   const rows = (await sql`
-    select count(*)::int as dream_count, max(created_at) as latest_created_at
+    select count(*)::int as dream_count
     from dream_records
     where user_id = ${userId}
       and deleted_at is null
@@ -244,15 +241,7 @@ async function getDreamStats({
 
   return {
     dreamCount: Number(row?.dream_count ?? 0),
-    latestCreatedAt: row?.latest_created_at ? new Date(row.latest_created_at) : null,
   };
-}
-
-function hasNewDreamSinceReport(cached: WeeklyReportRow, stats: { dreamCount: number; latestCreatedAt: Date | null }) {
-  if (cached.analysis_json && cached.analysis_json.report_version !== WEEKLY_REPORT_VERSION) return true;
-  if (stats.dreamCount !== Number(cached.dream_count)) return true;
-  if (!stats.latestCreatedAt) return false;
-  return stats.latestCreatedAt.getTime() > new Date(cached.generated_at).getTime();
 }
 
 async function generateAndSaveReport({
@@ -345,29 +334,24 @@ function serializeEmptyReport({
   weekStart,
   weekEnd,
   dreamCount,
-  needsRefresh,
 }: {
   weekStart: Date;
   weekEnd: Date;
   dreamCount: number;
-  needsRefresh: boolean;
 }) {
   return {
     analysis: null,
     dreamCount,
     weekStart: toShanghaiDateOnly(weekStart),
     weekEnd: toShanghaiDateOnly(weekEnd),
-    needsRefresh,
   };
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const user = await requireUser();
     const { start, end, endDateOnly } = getCurrentWeekRange();
     const currentPeriodLabel = formatPeriodLabel(start, end);
-    const url = new URL(request.url);
-    const preferCache = url.searchParams.get("preferCache") === "1";
     const sql = getSql();
 
     const cached = (await sql`
@@ -379,26 +363,20 @@ export async function GET(request: NextRequest) {
 
     const stats = await getDreamStats({ userId: user.id, weekStart: start, weekEnd: end });
     const cachedReport = cached[0] ?? null;
-    const needsRefresh = cachedReport ? hasNewDreamSinceReport(cachedReport, stats) : stats.dreamCount > 0;
 
-    if (cachedReport && (preferCache || !needsRefresh)) {
+    if (cachedReport) {
       return Response.json({
-        ...serializeReport(cachedReport, currentPeriodLabel, needsRefresh),
+        ...serializeReport(cachedReport, currentPeriodLabel),
         dreamCount: cachedReport.dream_count,
         weekEnd: endDateOnly,
       });
     }
 
-    if (preferCache) {
-      return Response.json(serializeEmptyReport({
-        weekStart: start,
-        weekEnd: end,
-        dreamCount: stats.dreamCount,
-        needsRefresh,
-      }));
-    }
-
-    return Response.json(await generateAndSaveReport({ userId: user.id, weekStart: start, weekEnd: end }));
+    return Response.json(serializeEmptyReport({
+      weekStart: start,
+      weekEnd: end,
+      dreamCount: stats.dreamCount,
+    }));
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("Load weekly dream analysis error:", err);

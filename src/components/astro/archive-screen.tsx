@@ -168,7 +168,6 @@ export function ArchiveScreen() {
     isPreloading: isWeeklyPreloading,
     isRegenerating: isWeeklyRegenerating,
     isRefreshing: isWeeklyRefreshing,
-    refresh: refreshWeeklyAnalysis,
     regenerate: runWeeklyAnalysis,
   } = useWeeklyReport();
   const router = useRouter();
@@ -178,11 +177,6 @@ export function ArchiveScreen() {
   const weeklyGeneratedAt = weeklyReport?.generatedAt ?? null;
 
   useEffect(() => { setMounted(true); }, []);
-
-  useEffect(() => {
-    if (!mounted || records.length === 0) return;
-    void refreshWeeklyAnalysis();
-  }, [mounted, records.length, refreshWeeklyAnalysis]);
 
   useEffect(() => {
     let active = true;
@@ -319,7 +313,7 @@ export function ArchiveScreen() {
               </div>
               <h3 className="mt-1 font-serif-dream text-[16px] text-white">本周梦境周报</h3>
               <p className="mt-1 text-[12px] leading-relaxed text-white/35">
-                统计本周一到今天；有新增梦境才会自动更新。
+                统计本周一到今天；提交新梦境后会同步更新。
               </p>
             </div>
             <motion.button
@@ -356,7 +350,7 @@ export function ArchiveScreen() {
 
           {isWeeklyRefreshing && !weeklyAnalysis && weeklyDreamCount !== 0 ? (
             <div className="rounded-xl border border-[rgba(45,212,191,0.12)] bg-[rgba(45,212,191,0.045)] px-3 py-3 text-[12px] text-[#2DD4BF]/55">
-              本周周报正在生成，完成后会自动放进这里。
+              新梦境已保存，本周周报正在同步更新。
             </div>
           ) : null}
 

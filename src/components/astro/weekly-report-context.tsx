@@ -21,7 +21,6 @@ export interface WeeklyReport {
   weekStart: string;
   weekEnd: string;
   generatedAt?: string;
-  needsRefresh?: boolean;
 }
 
 interface WeeklyReportContextValue {
@@ -76,27 +75,10 @@ export function WeeklyReportProvider({ children, userId }: { children: React.Rea
       setError(null);
 
       try {
-        const data = await fetch("/api/dream/weekly-analysis?preferCache=1", { method: "GET" })
+        const data = await fetch("/api/dream/weekly-analysis", { method: "GET" })
           .then((response) => readWeeklyReport(response, "读取本周梦境周报失败"));
         setReport(data);
         saveCachedReport(userId, data);
-
-        if (data.needsRefresh && !regenerateRef.current) {
-          setIsRefreshing(true);
-          regenerateRef.current = fetch("/api/dream/weekly-analysis", { method: "POST" })
-            .then((response) => readWeeklyReport(response, "生成本周梦境周报失败"))
-            .then((freshData) => {
-              setReport(freshData);
-              saveCachedReport(userId, freshData);
-            })
-            .catch((err) => {
-              setError(err instanceof Error ? err.message : "生成本周梦境周报失败");
-            })
-            .finally(() => {
-              setIsRefreshing(false);
-              regenerateRef.current = null;
-            });
-        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "读取本周梦境周报失败");
       } finally {
@@ -109,35 +91,70 @@ export function WeeklyReportProvider({ children, userId }: { children: React.Rea
     return task;
   }, [userId]);
 
-  const regenerate = useCallback(async () => {
+  const regenerateWeeklyReport = useCallback(async (manual: boolean) => {
     if (regenerateRef.current) {
-      setIsRegenerating(true);
+      if (manual) {
+        setIsRegenerating(true);
+      } else {
+        setIsRefreshing(true);
+      }
+
       try {
         await regenerateRef.current;
       } finally {
-        setIsRegenerating(false);
+        if (manual) {
+          setIsRegenerating(false);
+        } else {
+          setIsRefreshing(false);
+        }
       }
       return;
     }
 
-    setIsRegenerating(true);
+    if (manual) {
+      setIsRegenerating(true);
+    } else {
+      setIsRefreshing(true);
+    }
     setError(null);
 
-    try {
+    const task = (async () => {
       const data = await fetch("/api/dream/weekly-analysis", { method: "POST" })
         .then((response) => readWeeklyReport(response, "生成本周梦境周报失败"));
       setReport(data);
       saveCachedReport(userId, data);
+    })();
+
+    regenerateRef.current = task;
+
+    try {
+      await task;
     } catch (err) {
       setError(err instanceof Error ? err.message : "生成本周梦境周报失败");
     } finally {
-      setIsRegenerating(false);
+      if (manual) {
+        setIsRegenerating(false);
+      } else {
+        setIsRefreshing(false);
+      }
+      regenerateRef.current = null;
     }
   }, [userId]);
+
+  const regenerate = useCallback(() => regenerateWeeklyReport(true), [regenerateWeeklyReport]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const handleDreamSaved = () => {
+      void regenerateWeeklyReport(false);
+    };
+
+    window.addEventListener("dream-record-saved", handleDreamSaved);
+    return () => window.removeEventListener("dream-record-saved", handleDreamSaved);
+  }, [regenerateWeeklyReport]);
 
   const value = useMemo(() => ({
     report,

@@ -136,6 +136,7 @@ export function DreamProvider({ children }: { children: React.ReactNode }) {
         if (prev.some(r => r.id === newRecord.id)) return prev;
         return [newRecord, ...prev];
       });
+      window.dispatchEvent(new CustomEvent("dream-record-saved", { detail: { record: newRecord } }));
     } catch (err) {
       console.error("Auto save dream error:", err);
     }
@@ -212,6 +213,7 @@ export function DreamProvider({ children }: { children: React.ReactNode }) {
       setInterpretation(fallback);
       setIsSaved(false);
       syncSession({ interpretation: fallback });
+      await autoSaveDream(fallback);
     } finally {
       setIsLoading(false);
     }
