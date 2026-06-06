@@ -102,7 +102,7 @@ export function DreamerScreen() {
 
   const { emotion, setEmotion, dreamText, setDreamText, realityTrigger,
     setRealityTrigger, setCurrentStep, setInterpretation, triggerInterpret, isLoading, records, resetDream } = useDream();
-  const returningFromCard = searchParams.get("fromCard") === "true";
+  const showHistory = searchParams.get("history") === "1" || searchParams.get("fromCard") === "true";
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -142,7 +142,7 @@ export function DreamerScreen() {
     setDreamText("");
     setRealityTrigger("");
     setEmotion("");
-    if (returningFromCard) resetDream();
+    if (showHistory) resetDream();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
@@ -176,7 +176,7 @@ export function DreamerScreen() {
     </div>
   );
 
-  if (returningFromCard && !expanded) return (
+  if (showHistory && !expanded) return (
     <div className="w-full flex-1 flex flex-col gap-5">
       <button
         type="button"

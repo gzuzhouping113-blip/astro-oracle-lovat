@@ -18,8 +18,11 @@ const TAB_ITEMS = [
 ];
 
 function getNavHref(href: string, pathname: string) {
-  if (pathname !== "/card" || href === "/card") return href;
-  return href === "/" ? "/?fromCard=true" : `${href}?fromCard=true`;
+  if (href === "/parser" && pathname !== "/parser") return "/parser?history=1";
+  if (href === "/archive" && pathname !== "/archive") return "/archive?history=1";
+  if (href === "/card" && pathname !== "/card") return "/card?select=1";
+  if (href === "/" && pathname === "/card") return "/?history=1";
+  return href;
 }
 
 /* ── Header ─────────────────────────────── */

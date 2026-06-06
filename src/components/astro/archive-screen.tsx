@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Star, Trash2, ChevronLeft, Plus, ImageIcon } from "lucide-react";
+import { Brain, ChevronRight, Star, Trash2, ChevronLeft, Plus, ImageIcon, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useDream } from "@/components/astro/dream-context";
 import { useRouter } from "next/navigation";
@@ -14,6 +14,19 @@ interface ArchiveCard {
   imageUrl?: string;
   symbol_emoji?: string;
   createdAt: number;
+}
+
+interface WeeklyAnalysis {
+  periodLabel: string;
+  dreamCount: number;
+  current_state: string;
+  self_awareness: string;
+  recurring_symbols: string[];
+  emotion_pattern: string;
+  reality_reflection: string;
+  suggestions: string[];
+  gentle_warning: string;
+  disclaimer: string;
 }
 
 const PROXIED_IMAGE_HOSTS = new Set([
@@ -136,6 +149,10 @@ export function ArchiveScreen() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [cardHistory, setCardHistory] = useState<ArchiveCard[]>([]);
+  const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAnalysis | null>(null);
+  const [weeklyDreamCount, setWeeklyDreamCount] = useState<number | null>(null);
+  const [isWeeklyLoading, setIsWeeklyLoading] = useState(false);
+  const [weeklyError, setWeeklyError] = useState<string | null>(null);
 
   const today = new Date();
   const [calYear, setCalYear] = useState(today.getFullYear());
@@ -199,6 +216,29 @@ export function ArchiveScreen() {
     router.push("/parser");
   };
 
+  const runWeeklyAnalysis = async () => {
+    setIsWeeklyLoading(true);
+    setWeeklyError(null);
+
+    try {
+      const response = await fetch("/api/dream/weekly-analysis", { method: "POST" });
+      const data = await response.json().catch(() => ({})) as {
+        analysis?: WeeklyAnalysis | null;
+        dreamCount?: number;
+        error?: string;
+      };
+
+      if (!response.ok) throw new Error(data.error ?? "生成近一周梦境分析失败");
+
+      setWeeklyAnalysis(data.analysis ?? null);
+      setWeeklyDreamCount(typeof data.dreamCount === "number" ? data.dreamCount : null);
+    } catch (err) {
+      setWeeklyError(err instanceof Error ? err.message : "生成近一周梦境分析失败");
+    } finally {
+      setIsWeeklyLoading(false);
+    }
+  };
+
   const prevMonth = useCallback(() => {
     if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
     else setCalMonth(m => m - 1);
@@ -239,6 +279,119 @@ export function ArchiveScreen() {
           <Plus className="h-4 w-4" />
         </div>
       </Link>
+
+      <div
+        className="glass-panel rounded-2xl border border-[rgba(45,212,191,0.12)] p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-[#2DD4BF]" />
+                <p className="font-mono-tech text-[10px] tracking-widest text-[#2DD4BF]/75">WEEKLY SIGNAL</p>
+              </div>
+              <h3 className="mt-1 font-serif-dream text-[16px] text-white">近一周梦境周报</h3>
+              <p className="mt-1 text-[12px] leading-relaxed text-white/35">
+                汇总近 7 天梦境，观察情绪趋势、重复意象与自我意识线索。
+              </p>
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={runWeeklyAnalysis}
+              disabled={isWeeklyLoading}
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-[rgba(45,212,191,0.2)] bg-[rgba(45,212,191,0.08)] px-4 py-2 font-mono-tech text-[10px] text-[#2DD4BF] transition-all hover:bg-[rgba(45,212,191,0.13)] disabled:cursor-wait disabled:opacity-60"
+            >
+              {isWeeklyLoading ? (
+                <>
+                  <RefreshCw className="h-3 w-3 animate-spin" />
+                  分析中
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3 w-3" />
+                  生成周报
+                </>
+              )}
+            </motion.button>
+          </div>
+
+          {weeklyError ? (
+            <div className="rounded-xl border border-red-500/15 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-200/80">
+              {weeklyError}
+            </div>
+          ) : null}
+
+          {weeklyDreamCount === 0 ? (
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-[12px] text-white/35">
+              近 7 天暂无可分析梦境。先记录一条梦境，再回来生成周报。
+            </div>
+          ) : null}
+
+          {weeklyAnalysis ? (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-3"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-[rgba(45,212,191,0.18)] bg-[rgba(45,212,191,0.07)] px-2.5 py-1 font-mono-tech text-[9px] text-[#2DD4BF]/75">
+                  {weeklyAnalysis.periodLabel}
+                </span>
+                <span className="rounded-full border border-white/[0.06] bg-white/[0.035] px-2.5 py-1 font-mono-tech text-[9px] text-white/32">
+                  {weeklyAnalysis.dreamCount} 条梦境
+                </span>
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-[#2DD4BF]/65">当前状态</p>
+                  <p className="font-serif-dream text-[13px] leading-relaxed text-white/62">{weeklyAnalysis.current_state}</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-[#C9963A]/65">自我意识线索</p>
+                  <p className="font-serif-dream text-[13px] leading-relaxed text-white/62">{weeklyAnalysis.self_awareness}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {weeklyAnalysis.recurring_symbols.map((symbol) => (
+                  <span key={symbol} className="rounded-full border border-[rgba(136,117,255,0.18)] bg-[rgba(136,117,255,0.07)] px-2.5 py-1 font-mono-tech text-[9px] text-[#8875FF]/75">
+                    #{symbol}
+                  </span>
+                ))}
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-white/30">情绪模式</p>
+                  <p className="text-[12px] leading-relaxed text-white/52">{weeklyAnalysis.emotion_pattern}</p>
+                </div>
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+                  <p className="mb-1.5 font-mono-tech text-[9px] tracking-widest text-white/30">现实映照</p>
+                  <p className="text-[12px] leading-relaxed text-white/52">{weeklyAnalysis.reality_reflection}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+                <p className="mb-2 font-mono-tech text-[9px] tracking-widest text-white/30">本周建议</p>
+                <div className="space-y-1.5">
+                  {weeklyAnalysis.suggestions.map((suggestion, index) => (
+                    <p key={`${suggestion}-${index}`} className="text-[12px] leading-relaxed text-white/55">
+                      {index + 1}. {suggestion}
+                    </p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 text-[11px] leading-relaxed text-white/28">
+                <p>{weeklyAnalysis.gentle_warning}</p>
+                <p>{weeklyAnalysis.disclaimer}</p>
+              </div>
+            </motion.div>
+          ) : null}
+        </div>
+      </div>
 
       {/* ── 日历面板 ── */}
       <div className="glass-panel rounded-2xl p-4" onClick={e => e.stopPropagation()}>

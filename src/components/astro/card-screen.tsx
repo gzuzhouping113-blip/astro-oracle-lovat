@@ -300,7 +300,6 @@ export function CardScreen() {
       .then((data) => {
         const cards = (data.cards ?? []) as CardData[];
         setHistory(cards);
-        setCard((current) => current ?? cards[0] ?? null);
       })
       .catch((err) => {
         console.error("Load card history error:", err);
@@ -310,6 +309,7 @@ export function CardScreen() {
   }, []);
 
   const searchParams = useSearchParams();
+  const selectMode = searchParams.get("select") === "1";
 
   // 核心生图函数（不用 useCallback 避免声明顺序问题）
   const doGenerate = async (
@@ -371,11 +371,35 @@ export function CardScreen() {
   );
 
   const displayCard = card;
-  const hasCurrentDream = Boolean(dreamText.trim());
+  const hasCurrentDream = !selectMode && Boolean(dreamText.trim());
   const canGenerateCard = hasCurrentDream && Boolean(interpretation);
   const sourceExcerpt = hasCurrentDream ? displayExcerpt : displayCard?.dreamExcerpt ?? "";
   const sourceEmotion = hasCurrentDream ? emotion : displayCard?.emotion ?? "";
   const sourceKeywords = hasCurrentDream ? displayKeywords : [];
+
+  const selectHistoryCard = (historyCard: CardData) => {
+    setCard(historyCard);
+    setViewMode("card");
+
+    const record = historyCard.dreamRecordId
+      ? records.find((item) => item.id === historyCard.dreamRecordId)
+      : undefined;
+
+    if (!record) {
+      setActiveDream(null);
+      return;
+    }
+
+    const interp = record.interpretation ?? null;
+    setActiveDream({
+      recordId: record.id,
+      emotion: record.emotion,
+      dreamText: record.fullText ?? record.excerpt,
+      excerpt: record.excerpt,
+      keywords: interp?.keywords ?? record.symbols ?? [],
+      interpretation: interp,
+    });
+  };
 
   return (
     <div className="w-full flex-1 flex flex-col gap-5">
@@ -392,7 +416,7 @@ export function CardScreen() {
         <div className="flex-1 flex items-center justify-center py-20">
           <div className="w-7 h-7 rounded-full border-2 border-t-transparent border-[#8875FF] animate-spin" />
         </div>
-      ) : !hasCurrentDream && !displayCard ? (
+      ) : !hasCurrentDream && !displayCard && history.length === 0 && records.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center py-16 text-center">
           <div className="w-16 h-16 rounded-full bg-[rgba(136,117,255,0.07)] border border-[rgba(136,117,255,0.14)] flex items-center justify-center mb-5">
             <Share2 className="w-7 h-7 text-[#8875FF]/40" />
@@ -646,7 +670,7 @@ export function CardScreen() {
                       <ImageIcon className="w-5 h-5 text-[#8875FF]/50" />
                     </div>
                     <div>
-                      <p className="font-serif-dream text-[13px] text-white/50 mb-1">选择梦境档案</p>
+                      <p className="font-serif-dream text-[13px] text-white/50 mb-1">选择梦境档案生图</p>
                       <p className="font-mono-tech text-[10px] text-white/20">从已保存的梦境中选择后生成卡片</p>
                     </div>
                   </motion.div>
@@ -696,7 +720,7 @@ export function CardScreen() {
                 {history.map((h, i) => (
                   <motion.button key={h.createdAt}
                     initial={{opacity:0,scale:0.9}} animate={{opacity:1,scale:1}} transition={{delay:i*0.04}}
-                    onClick={() => { setCard(h); setViewMode("card"); }}
+                    onClick={() => selectHistoryCard(h)}
                     className="shrink-0 w-[72px] flex flex-col gap-1 group"
                   >
                     <div className={`w-[72px] h-24 rounded-xl overflow-hidden border relative transition-all ${
