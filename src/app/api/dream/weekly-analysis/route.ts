@@ -139,6 +139,52 @@ function fallbackAnalysis(dreamCount: number, periodLabel: string): WeeklyAnalys
   };
 }
 
+function pickTopItems(items: string[], maxItems: number) {
+  const counts = new Map<string, number>();
+
+  items
+    .map(item => item.trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      counts.set(item, (counts.get(item) ?? 0) + 1);
+    });
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([item]) => item)
+    .slice(0, maxItems);
+}
+
+function buildLocalWeeklyAnalysis(records: ReturnType<typeof mapDreamRecord>[], dreamCount: number, periodLabel: string): WeeklyAnalysis {
+  const fallback = fallbackAnalysis(dreamCount, periodLabel);
+  if (records.length === 0) return fallback;
+
+  const emotions = pickTopItems(
+    records.map(record => record.emotion.split(" / ")[0] ?? record.emotion),
+    2,
+  );
+  const symbols = pickTopItems(records.flatMap(record => record.symbols ?? []), 3);
+  const symbolText = symbols.length ? symbols.join("、") : "醒来感受、重复场景";
+  const emotionText = emotions.length ? emotions.join("、") : "起伏";
+
+  return {
+    periodLabel,
+    dreamCount,
+    current_state: `本周共记录 ${dreamCount} 条梦境，整体情绪更靠近${emotionText}。这些梦不像单一事件，更像近期压力、期待和身体疲惫交错后的回声，适合先把它们作为自我观察线索。`,
+    self_awareness: `梦里反复被记住的部分集中在${symbolText}。你可以留意醒来后最先残留的感受，它通常比梦里的剧情更能指向当下真正被触动的位置。`,
+    recurring_symbols: symbols.length ? symbols : fallback.recurring_symbols,
+    emotion_pattern: `情绪线索有一定持续性，但还不需要急着下结论。更适合继续记录几天，观察哪些画面反复出现，哪些感受在白天仍然有轻微延续。`,
+    reality_reflection: `这些梦可能在映照现实里的节奏压力、未完成事项或关系中的不确定感。它们不负责给出答案，但能提醒你哪些部分已经需要被慢慢照顾。`,
+    suggestions: [
+      "醒来后先写下第一感受，再补充梦里最清晰的一个画面。",
+      "把重复出现的人物、地点或颜色标记出来，周末再一起回看。",
+    ],
+    gentle_warning: "如果近期噩梦明显增多，或影响睡眠和白天状态，建议把它当作需要休息与支持的信号。",
+    disclaimer: fallback.disclaimer,
+    report_version: WEEKLY_REPORT_VERSION,
+  };
+}
+
 function normalizeAnalysis(raw: unknown, dreamCount: number, periodLabel: string): WeeklyAnalysis {
   const data = asRecord(raw);
   const fallback = fallbackAnalysis(dreamCount, periodLabel);
@@ -266,8 +312,13 @@ JSON 格式：
   "gentle_warning": "45-70个中文字符的温和提醒"
 }`;
 
-    const raw = await generateText({ system, prompt });
-    analysis = normalizeAnalysis(parseJsonObject(raw), stats.dreamCount, periodLabel);
+    try {
+      const raw = await generateText({ system, prompt });
+      analysis = normalizeAnalysis(parseJsonObject(raw), stats.dreamCount, periodLabel);
+    } catch (err) {
+      console.error("Weekly report model error, using local fallback:", err);
+      analysis = buildLocalWeeklyAnalysis(records, stats.dreamCount, periodLabel);
+    }
   }
 
   const saved = (await sql`
