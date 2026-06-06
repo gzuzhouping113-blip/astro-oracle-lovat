@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Brain, ChevronRight, Star, Trash2, ChevronLeft, Plus, ImageIcon, RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useDream } from "@/components/astro/dream-context";
+import { useWeeklyReport } from "@/components/astro/weekly-report-context";
 import { useRouter } from "next/navigation";
 import type { DreamRecord } from "@/lib/dream-types";
 
@@ -14,27 +15,6 @@ interface ArchiveCard {
   imageUrl?: string;
   symbol_emoji?: string;
   createdAt: number;
-}
-
-interface WeeklyAnalysis {
-  periodLabel: string;
-  dreamCount: number;
-  current_state: string;
-  self_awareness: string;
-  recurring_symbols: string[];
-  emotion_pattern: string;
-  reality_reflection: string;
-  suggestions: string[];
-  gentle_warning: string;
-  disclaimer: string;
-}
-
-interface WeeklyReport {
-  analysis: WeeklyAnalysis | null;
-  dreamCount: number;
-  weekStart: string;
-  weekEnd: string;
-  generatedAt?: string;
 }
 
 const PROXIED_IMAGE_HOSTS = new Set([
@@ -176,20 +156,33 @@ export function ArchiveScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [cardHistory, setCardHistory] = useState<ArchiveCard[]>([]);
-  const [weeklyAnalysis, setWeeklyAnalysis] = useState<WeeklyAnalysis | null>(null);
-  const [weeklyDreamCount, setWeeklyDreamCount] = useState<number | null>(null);
-  const [weeklyGeneratedAt, setWeeklyGeneratedAt] = useState<string | null>(null);
-  const [isWeeklyLoading, setIsWeeklyLoading] = useState(false);
-  const [weeklyError, setWeeklyError] = useState<string | null>(null);
 
   const today = useMemo(() => new Date(), []);
   const [calYear, setCalYear] = useState(today.getFullYear());
   const [calMonth, setCalMonth] = useState(today.getMonth());
 
   const { records, setEmotion, setDreamText, setInterpretation, setCurrentStep, deleteDream } = useDream();
+  const {
+    report: weeklyReport,
+    error: weeklyError,
+    isPreloading: isWeeklyPreloading,
+    isRegenerating: isWeeklyRegenerating,
+    isRefreshing: isWeeklyRefreshing,
+    refresh: refreshWeeklyAnalysis,
+    regenerate: runWeeklyAnalysis,
+  } = useWeeklyReport();
   const router = useRouter();
 
+  const weeklyAnalysis = weeklyReport?.analysis ?? null;
+  const weeklyDreamCount = typeof weeklyReport?.dreamCount === "number" ? weeklyReport.dreamCount : null;
+  const weeklyGeneratedAt = weeklyReport?.generatedAt ?? null;
+
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (!mounted || records.length === 0) return;
+    void refreshWeeklyAnalysis();
+  }, [mounted, records.length, refreshWeeklyAnalysis]);
 
   useEffect(() => {
     let active = true;
@@ -272,52 +265,6 @@ export function ArchiveScreen() {
     setDeletingId(null);
   };
 
-  const applyWeeklyReport = (data: WeeklyReport) => {
-    setWeeklyAnalysis(data.analysis ?? null);
-    setWeeklyDreamCount(typeof data.dreamCount === "number" ? data.dreamCount : null);
-    setWeeklyGeneratedAt(data.generatedAt ?? null);
-  };
-
-  const loadWeeklyAnalysis = async () => {
-    setIsWeeklyLoading(true);
-    setWeeklyError(null);
-
-    try {
-      const response = await fetch("/api/dream/weekly-analysis", { method: "GET" });
-      const data = await response.json().catch(() => ({})) as WeeklyReport & { error?: string };
-
-      if (!response.ok) throw new Error(data.error ?? "读取本周梦境周报失败");
-      applyWeeklyReport(data);
-    } catch (err) {
-      setWeeklyError(err instanceof Error ? err.message : "读取本周梦境周报失败");
-    } finally {
-      setIsWeeklyLoading(false);
-    }
-  };
-
-  const runWeeklyAnalysis = async () => {
-    setIsWeeklyLoading(true);
-    setWeeklyError(null);
-
-    try {
-      const response = await fetch("/api/dream/weekly-analysis", { method: "POST" });
-      const data = await response.json().catch(() => ({})) as WeeklyReport & { error?: string };
-
-      if (!response.ok) throw new Error(data.error ?? "生成本周梦境周报失败");
-      applyWeeklyReport(data);
-    } catch (err) {
-      setWeeklyError(err instanceof Error ? err.message : "生成本周梦境周报失败");
-    } finally {
-      setIsWeeklyLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!mounted) return;
-    void loadWeeklyAnalysis();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted]);
-
   const prevMonth = () => {
     if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
     else setCalMonth(m => m - 1);
@@ -378,10 +325,10 @@ export function ArchiveScreen() {
             <motion.button
               whileTap={{ scale: 0.96 }}
               onClick={runWeeklyAnalysis}
-              disabled={isWeeklyLoading}
+              disabled={isWeeklyRegenerating}
               className="flex shrink-0 items-center gap-1.5 rounded-full border border-[rgba(45,212,191,0.2)] bg-[rgba(45,212,191,0.08)] px-4 py-2 font-mono-tech text-[10px] text-[#2DD4BF] transition-all hover:bg-[rgba(45,212,191,0.13)] disabled:cursor-wait disabled:opacity-60"
             >
-              {isWeeklyLoading ? (
+              {isWeeklyRegenerating ? (
                 <>
                   <RefreshCw className="h-3 w-3 animate-spin" />
                   分析中
@@ -398,6 +345,18 @@ export function ArchiveScreen() {
           {weeklyError ? (
             <div className="rounded-xl border border-red-500/15 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-200/80">
               {weeklyError}
+            </div>
+          ) : null}
+
+          {isWeeklyPreloading && !weeklyReport ? (
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-[12px] text-white/35">
+              正在读取已保存的本周周报。
+            </div>
+          ) : null}
+
+          {isWeeklyRefreshing && !weeklyAnalysis && weeklyDreamCount !== 0 ? (
+            <div className="rounded-xl border border-[rgba(45,212,191,0.12)] bg-[rgba(45,212,191,0.045)] px-3 py-3 text-[12px] text-[#2DD4BF]/55">
+              本周周报正在生成，完成后会自动放进这里。
             </div>
           ) : null}
 
@@ -423,6 +382,11 @@ export function ArchiveScreen() {
                 {weeklyGeneratedAt ? (
                   <span className="rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 font-mono-tech text-[9px] text-white/24">
                     {new Date(weeklyGeneratedAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                ) : null}
+                {isWeeklyRefreshing ? (
+                  <span className="rounded-full border border-[rgba(45,212,191,0.12)] bg-[rgba(45,212,191,0.045)] px-2.5 py-1 font-mono-tech text-[9px] text-[#2DD4BF]/55">
+                    同步中
                   </span>
                 ) : null}
               </div>

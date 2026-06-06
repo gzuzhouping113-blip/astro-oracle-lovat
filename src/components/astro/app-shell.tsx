@@ -2,6 +2,7 @@
 import { AuthProvider, useAuth } from "@/components/astro/auth-context";
 import { AuthScreen } from "@/components/astro/auth-screen";
 import { DreamProvider } from "@/components/astro/dream-context";
+import { WeeklyReportProvider } from "@/components/astro/weekly-report-context";
 import { OracleHeader } from "@/components/astro/oracle-nav";
 import { OracleSidebar } from "@/components/astro/oracle-nav";
 import { OracleBottomNav } from "@/components/astro/oracle-nav";
@@ -33,15 +34,17 @@ function AuthenticatedShell({ children }: { children: React.ReactNode }) {
 
   return (
     <DreamProvider>
-      <OracleHeader />
-      <div className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-6 pb-20 lg:pb-6 flex gap-6 items-start">
-        <OracleSidebar />
-        <main className="flex-1 min-w-0">
-          {children}
-        </main>
-      </div>
-      <SiteFooter withBottomNav />
-      <OracleBottomNav />
+      <WeeklyReportProvider key={user.id} userId={user.id}>
+        <OracleHeader />
+        <div className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-6 pb-20 lg:pb-6 flex gap-6 items-start">
+          <OracleSidebar />
+          <main className="flex-1 min-w-0">
+            {children}
+          </main>
+        </div>
+        <SiteFooter withBottomNav />
+        <OracleBottomNav />
+      </WeeklyReportProvider>
     </DreamProvider>
   );
 }

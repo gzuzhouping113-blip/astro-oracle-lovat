@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { generateText } from "@/lib/ai-text";
 import { requireUser } from "@/lib/auth/session";
 import { getSql } from "@/lib/db";
@@ -16,6 +17,7 @@ interface WeeklyAnalysis {
   suggestions: string[];
   gentle_warning: string;
   disclaimer: string;
+  report_version?: number;
 }
 
 interface WeeklyReportRow {
@@ -32,6 +34,7 @@ interface DreamStatsRow {
 }
 
 const SHANGHAI_TIME_ZONE = "Asia/Shanghai";
+const WEEKLY_REPORT_VERSION = 2;
 
 const shanghaiDateFormatter = new Intl.DateTimeFormat("en", {
   timeZone: SHANGHAI_TIME_ZONE,
@@ -103,12 +106,12 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function asString(value: unknown, fallback: string, maxLength = 120) {
+function asString(value: unknown, fallback: string, maxLength = 160) {
   const text = typeof value === "string" && value.trim() ? value.trim() : fallback;
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-function asStringArray(value: unknown, fallback: string[], maxItems = 3, maxLength = 24) {
+function asStringArray(value: unknown, fallback: string[], maxItems = 3, maxLength = 80) {
   if (!Array.isArray(value)) return fallback;
   const items = value
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
@@ -124,14 +127,15 @@ function fallbackAnalysis(dreamCount: number, periodLabel: string): WeeklyAnalys
   return {
     periodLabel,
     dreamCount,
-    current_state: "本周梦境样本有限，但可以先把它当作近期情绪节奏的观察线索。",
-    self_awareness: "留意反复出现的场景、人物和醒来后的第一感受，它们更容易呈现当下关注点。",
+    current_state: "本周梦境样本还不算多，但已经可以作为近期内在节奏的观察入口。先把梦里的情绪强度、醒来后的余韵和反复出现的画面放在一起看，它们会比单个象征更接近真实状态。",
+    self_awareness: "你可以留意梦境里最先被记住的人、地点和动作，它们往往对应现实中正在被反复触碰的关注点。不要急着解释对错，先观察哪些感受在醒来后仍然停留。",
     recurring_symbols: ["情绪强度", "重复场景", "醒来感受"],
-    emotion_pattern: "情绪趋势暂时不明显，适合继续记录几天再观察。",
-    reality_reflection: "梦境可能在映照现实中的压力、期待或未完成事项。",
-    suggestions: ["记录醒来后的第一感受", "标记重复出现的人物或地点"],
-    gentle_warning: "若噩梦频繁或影响睡眠，建议寻求专业支持。",
+    emotion_pattern: "本周情绪线索暂时还在聚拢，可能呈现为零散片段而不是清晰主题。继续记录几天后，压力、期待或回避的方向会更容易显出来。",
+    reality_reflection: "梦境可能正在映照现实中的未完成事项、关系压力或身体疲惫。它不一定给出答案，但会提醒你哪些部分已经需要更温和地被看见。",
+    suggestions: ["醒来后先写下第一感受，再补充梦里最清晰的画面。", "把重复出现的人物、地点或颜色标记出来，周末再一起回看。"],
+    gentle_warning: "如果噩梦持续变频繁，或明显影响睡眠和白天状态，建议把它当作需要照顾的信号，并考虑寻求专业支持。",
     disclaimer: "本周梦境分析仅供自我观察和娱乐参考，不构成心理诊断、医疗建议或确定性预测。",
+    report_version: WEEKLY_REPORT_VERSION,
   };
 }
 
@@ -142,18 +146,19 @@ function normalizeAnalysis(raw: unknown, dreamCount: number, periodLabel: string
   return {
     periodLabel: asString(data.periodLabel, fallback.periodLabel, 32),
     dreamCount,
-    current_state: asString(data.current_state, fallback.current_state, 90),
-    self_awareness: asString(data.self_awareness, fallback.self_awareness, 90),
-    recurring_symbols: asStringArray(data.recurring_symbols, fallback.recurring_symbols),
-    emotion_pattern: asString(data.emotion_pattern, fallback.emotion_pattern, 80),
-    reality_reflection: asString(data.reality_reflection, fallback.reality_reflection, 80),
-    suggestions: asStringArray(data.suggestions, fallback.suggestions, 2, 48),
-    gentle_warning: asString(data.gentle_warning, fallback.gentle_warning, 70),
+    current_state: asString(data.current_state, fallback.current_state, 150),
+    self_awareness: asString(data.self_awareness, fallback.self_awareness, 140),
+    recurring_symbols: asStringArray(data.recurring_symbols, fallback.recurring_symbols, 3, 18),
+    emotion_pattern: asString(data.emotion_pattern, fallback.emotion_pattern, 120),
+    reality_reflection: asString(data.reality_reflection, fallback.reality_reflection, 120),
+    suggestions: asStringArray(data.suggestions, fallback.suggestions, 2, 72),
+    gentle_warning: asString(data.gentle_warning, fallback.gentle_warning, 100),
     disclaimer: fallback.disclaimer,
+    report_version: WEEKLY_REPORT_VERSION,
   };
 }
 
-function serializeReport(row: WeeklyReportRow, currentPeriodLabel?: string) {
+function serializeReport(row: WeeklyReportRow, currentPeriodLabel?: string, needsRefresh = false) {
   const analysis = row.analysis_json
     ? {
         ...row.analysis_json,
@@ -167,6 +172,7 @@ function serializeReport(row: WeeklyReportRow, currentPeriodLabel?: string) {
     weekStart: dateOnlyFromDb(row.week_start),
     weekEnd: dateOnlyFromDb(row.week_end),
     generatedAt: new Date(row.generated_at).toISOString(),
+    needsRefresh,
   };
 }
 
@@ -197,7 +203,8 @@ async function getDreamStats({
 }
 
 function hasNewDreamSinceReport(cached: WeeklyReportRow, stats: { dreamCount: number; latestCreatedAt: Date | null }) {
-  if (stats.dreamCount > Number(cached.dream_count)) return true;
+  if (cached.analysis_json && cached.analysis_json.report_version !== WEEKLY_REPORT_VERSION) return true;
+  if (stats.dreamCount !== Number(cached.dream_count)) return true;
   if (!stats.latestCreatedAt) return false;
   return stats.latestCreatedAt.getTime() > new Date(cached.generated_at).getTime();
 }
@@ -239,9 +246,10 @@ async function generateAndSaveReport({
       mood: record.interpretation?.mood ?? "",
     }));
 
-    const system = `你是一个温和、谨慎的梦境周报分析助手。你只输出简短 JSON，不做诊断，不做确定性预言。`;
+    const system = `你是一个温和、细腻、谨慎的梦境周报分析助手。你只输出 JSON，不做诊断，不做确定性预言。`;
     const prompt = `请分析这一周的梦境资料，输出必须是 JSON，不要 Markdown。
-每个字段都要短，不要长篇解释。
+内容要比一句话更充分：每个主要字段在界面里大约能自然显示 2-3 行，但不要写成长篇文章。
+语气温和、具体、像是在帮助用户做自我观察，不要恐吓，不要医学诊断。
 
 梦境资料：
 ${JSON.stringify(dreamDigest, null, 2)}
@@ -249,13 +257,13 @@ ${JSON.stringify(dreamDigest, null, 2)}
 JSON 格式：
 {
   "periodLabel": "${periodLabel}",
-  "current_state": "一句话，45字以内",
-  "self_awareness": "一句话，45字以内",
-  "recurring_symbols": ["主题1", "主题2", "主题3"],
-  "emotion_pattern": "一句话，40字以内",
-  "reality_reflection": "一句话，40字以内",
-  "suggestions": ["建议1，24字以内", "建议2，24字以内"],
-  "gentle_warning": "一句温和提醒，35字以内"
+  "current_state": "70-95个中文字符，描述本周整体状态",
+  "self_awareness": "65-90个中文字符，指出可观察的自我意识线索",
+  "recurring_symbols": ["2-6字主题1", "2-6字主题2", "2-6字主题3"],
+  "emotion_pattern": "55-80个中文字符，描述情绪模式",
+  "reality_reflection": "55-80个中文字符，连接现实压力或生活节奏",
+  "suggestions": ["35-55个中文字符的建议1", "35-55个中文字符的建议2"],
+  "gentle_warning": "45-70个中文字符的温和提醒"
 }`;
 
     const raw = await generateText({ system, prompt });
@@ -282,11 +290,33 @@ JSON 格式：
   return serializeReport(saved[0]);
 }
 
-export async function GET() {
+function serializeEmptyReport({
+  weekStart,
+  weekEnd,
+  dreamCount,
+  needsRefresh,
+}: {
+  weekStart: Date;
+  weekEnd: Date;
+  dreamCount: number;
+  needsRefresh: boolean;
+}) {
+  return {
+    analysis: null,
+    dreamCount,
+    weekStart: toShanghaiDateOnly(weekStart),
+    weekEnd: toShanghaiDateOnly(weekEnd),
+    needsRefresh,
+  };
+}
+
+export async function GET(request: NextRequest) {
   try {
     const user = await requireUser();
     const { start, end, endDateOnly } = getCurrentWeekRange();
     const currentPeriodLabel = formatPeriodLabel(start, end);
+    const url = new URL(request.url);
+    const preferCache = url.searchParams.get("preferCache") === "1";
     const sql = getSql();
 
     const cached = (await sql`
@@ -297,13 +327,24 @@ export async function GET() {
     `) as WeeklyReportRow[];
 
     const stats = await getDreamStats({ userId: user.id, weekStart: start, weekEnd: end });
+    const cachedReport = cached[0] ?? null;
+    const needsRefresh = cachedReport ? hasNewDreamSinceReport(cachedReport, stats) : stats.dreamCount > 0;
 
-    if (cached[0] && !hasNewDreamSinceReport(cached[0], stats)) {
+    if (cachedReport && (preferCache || !needsRefresh)) {
       return Response.json({
-        ...serializeReport(cached[0], currentPeriodLabel),
-        dreamCount: cached[0].dream_count,
+        ...serializeReport(cachedReport, currentPeriodLabel, needsRefresh),
+        dreamCount: cachedReport.dream_count,
         weekEnd: endDateOnly,
       });
+    }
+
+    if (preferCache) {
+      return Response.json(serializeEmptyReport({
+        weekStart: start,
+        weekEnd: end,
+        dreamCount: stats.dreamCount,
+        needsRefresh,
+      }));
     }
 
     return Response.json(await generateAndSaveReport({ userId: user.id, weekStart: start, weekEnd: end }));
