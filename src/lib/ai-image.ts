@@ -1,7 +1,7 @@
 const DEFAULT_IMAGE_BASE_URL = "https://www.lansekafei.asia/v1";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2";
-const IMAGE_TIMEOUT_MS = 120_000;
-const IMAGE_ATTEMPTS = 2;
+const IMAGE_TIMEOUT_MS = 55_000;
+const IMAGE_ATTEMPTS = 1;
 const DEFAULT_PROXY_IMAGE_HOSTS = [
   "154.217.234.133",
   "lansekafei.asia",
@@ -18,6 +18,18 @@ function trimTrailingSlash(value: string) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function isNonRetriableImageError(err: unknown) {
+  return err instanceof Error && /^Image API (400|401|403):/.test(err.message);
 }
 
 function getProxyImageHosts() {
@@ -59,6 +71,57 @@ function toDisplayImageUrl(imageUrl: string) {
   }
 }
 
+function normalizeImageValue(value: string) {
+  if (!value) return "";
+  if (value.startsWith("data:image/")) return value;
+  if (/^https?:\/\//.test(value)) return toDisplayImageUrl(value);
+  if (value.length > 100) return `data:image/png;base64,${value}`;
+  return "";
+}
+
+function extractImageValue(data: unknown): string {
+  const candidates: unknown[] = [];
+
+  if (isRecord(data)) {
+    candidates.push(data);
+    if (Array.isArray(data.data)) candidates.push(...data.data);
+    if (Array.isArray(data.output)) candidates.push(...data.output);
+  }
+
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+
+    const direct = normalizeImageValue(
+      asString(candidate.url)
+        || asString(candidate.b64_json)
+        || asString(candidate.image_url)
+        || asString(candidate.result),
+    );
+    if (direct) return direct;
+
+    const imageUrl = candidate.image_url;
+    if (isRecord(imageUrl)) {
+      const nested = normalizeImageValue(asString(imageUrl.url) || asString(imageUrl.b64_json));
+      if (nested) return nested;
+    }
+
+    if (Array.isArray(candidate.content)) {
+      for (const content of candidate.content) {
+        if (!isRecord(content)) continue;
+        const nested = normalizeImageValue(
+          asString(content.url)
+            || asString(content.b64_json)
+            || asString(content.image_url)
+            || asString(content.result),
+        );
+        if (nested) return nested;
+      }
+    }
+  }
+
+  return "";
+}
+
 export async function generateImage(prompt: string) {
   const apiKey = readEnv("GPT_IMAGE_API_KEY");
   if (!apiKey) {
@@ -98,17 +161,17 @@ export async function generateImage(prompt: string) {
           b64_json?: string;
         }>;
       };
-      const item = data.data?.[0];
-      if (item?.url) {
-        return toDisplayImageUrl(item.url);
-      }
-      if (item?.b64_json) {
-        return `data:image/png;base64,${item.b64_json}`;
+      const image = extractImageValue(data);
+      if (image) {
+        return image;
       }
 
       throw new Error("Image API did not return an image");
     } catch (err) {
       lastError = err;
+      if (isNonRetriableImageError(err)) {
+        break;
+      }
       if (attempt < IMAGE_ATTEMPTS) {
         await sleep(attempt * 1_000);
       }

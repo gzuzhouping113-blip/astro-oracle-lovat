@@ -15,6 +15,10 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isNonRetriableTextError(err: unknown) {
+  return err instanceof Error && /^Text API (400|401|403):/.test(err.message);
+}
+
 async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -188,6 +192,9 @@ export async function generateText({
       throw new Error("Text API returned an empty response");
     } catch (err) {
       lastError = err;
+      if (isNonRetriableTextError(err)) {
+        break;
+      }
       if (attempt < TEXT_ATTEMPTS) {
         await sleep(attempt * 1_000);
       }

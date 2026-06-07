@@ -157,6 +157,7 @@ export function CardScreen() {
       });
       const data = await res.json();
       if (!res.ok || data.error) { setError(data.error ?? "生成失败"); return; }
+      if (!data.imageUrl) { setError("图片生成没有返回图片，请稍后重试"); return; }
       const newCard: CardData = {
         ...data,
         dreamRecordId: activeDream?.recordId ?? currentRecordId,

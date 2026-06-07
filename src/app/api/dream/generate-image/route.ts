@@ -2,6 +2,9 @@ import { NextRequest } from "next/server";
 import { generateImage } from "@/lib/ai-image";
 import { generateText } from "@/lib/ai-text";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   const { emotion, dreamText, keywords } = await request.json();
 
