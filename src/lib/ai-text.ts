@@ -1,7 +1,7 @@
 const DEFAULT_TEXT_BASE_URL = "https://www.lansekafei.asia/v1";
 const DEFAULT_TEXT_MODEL = "gpt-5.4-mini";
 const TEXT_TIMEOUT_MS = 90_000;
-const TEXT_ATTEMPTS = 4;
+const TEXT_ATTEMPTS = 2;
 
 function readEnv(name: string) {
   return process.env[name]?.trim();

@@ -12,6 +12,10 @@ function readEnv(name: string) {
   return process.env[name]?.trim();
 }
 
+function uniqueValues(values: Array<string | undefined>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
+}
+
 function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
@@ -123,8 +127,11 @@ function extractImageValue(data: unknown): string {
 }
 
 export async function generateImage(prompt: string) {
-  const apiKey = readEnv("GPT_IMAGE_API_KEY");
-  if (!apiKey) {
+  const apiKeys = uniqueValues([
+    readEnv("GPT_IMAGE_API_KEY"),
+    readEnv("CUSTOM_AI_API_KEY"),
+  ]);
+  if (!apiKeys.length) {
     throw new Error("GPT_IMAGE_API_KEY is not configured");
   }
 
@@ -133,47 +140,49 @@ export async function generateImage(prompt: string) {
   const size = readEnv("GPT_IMAGE_SIZE") ?? "1024x1024";
 
   let lastError: unknown = null;
-  for (let attempt = 1; attempt <= IMAGE_ATTEMPTS; attempt += 1) {
-    try {
-      const response = await fetchWithTimeout(`${baseUrl}/images/generations`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          prompt,
-          n: 1,
-          size,
-          response_format: "url",
-        }),
-      }, IMAGE_TIMEOUT_MS);
+  for (const apiKey of apiKeys) {
+    for (let attempt = 1; attempt <= IMAGE_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetchWithTimeout(`${baseUrl}/images/generations`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            prompt,
+            n: 1,
+            size,
+            response_format: "url",
+          }),
+        }, IMAGE_TIMEOUT_MS);
 
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(`Image API ${response.status}: ${text.slice(0, 500)}`);
-      }
+        const text = await response.text();
+        if (!response.ok) {
+          throw new Error(`Image API ${response.status}: ${text.slice(0, 500)}`);
+        }
 
-      const data = JSON.parse(text) as {
-        data?: Array<{
-          url?: string;
-          b64_json?: string;
-        }>;
-      };
-      const image = extractImageValue(data);
-      if (image) {
-        return image;
-      }
+        const data = JSON.parse(text) as {
+          data?: Array<{
+            url?: string;
+            b64_json?: string;
+          }>;
+        };
+        const image = extractImageValue(data);
+        if (image) {
+          return image;
+        }
 
-      throw new Error("Image API did not return an image");
-    } catch (err) {
-      lastError = err;
-      if (isNonRetriableImageError(err)) {
-        break;
-      }
-      if (attempt < IMAGE_ATTEMPTS) {
-        await sleep(attempt * 1_000);
+        throw new Error("Image API did not return an image");
+      } catch (err) {
+        lastError = err;
+        if (isNonRetriableImageError(err)) {
+          break;
+        }
+        if (attempt < IMAGE_ATTEMPTS) {
+          await sleep(attempt * 1_000);
+        }
       }
     }
   }
