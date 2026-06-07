@@ -136,7 +136,9 @@ export function DreamProvider({ children }: { children: React.ReactNode }) {
         if (prev.some(r => r.id === newRecord.id)) return prev;
         return [newRecord, ...prev];
       });
-      window.dispatchEvent(new CustomEvent("dream-record-saved", { detail: { record: newRecord } }));
+      window.dispatchEvent(new CustomEvent("dream-record-saved", {
+        detail: { record: newRecord, weeklyReport: data.weeklyReport ?? null },
+      }));
     } catch (err) {
       console.error("Auto save dream error:", err);
     }

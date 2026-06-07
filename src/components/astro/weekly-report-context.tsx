@@ -148,13 +148,18 @@ export function WeeklyReportProvider({ children, userId }: { children: React.Rea
   }, [refresh]);
 
   useEffect(() => {
-    const handleDreamSaved = () => {
-      void regenerateWeeklyReport(false);
+    const handleDreamSaved = (event: Event) => {
+      const weeklyReport = (event as CustomEvent<{ weeklyReport?: WeeklyReport | null }>).detail?.weeklyReport;
+      if (!weeklyReport) return;
+
+      setError(null);
+      setReport(weeklyReport);
+      saveCachedReport(userId, weeklyReport);
     };
 
     window.addEventListener("dream-record-saved", handleDreamSaved);
     return () => window.removeEventListener("dream-record-saved", handleDreamSaved);
-  }, [regenerateWeeklyReport]);
+  }, [userId]);
 
   const value = useMemo(() => ({
     report,

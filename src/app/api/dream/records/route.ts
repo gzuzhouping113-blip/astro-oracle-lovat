@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getSql } from "@/lib/db";
 import { mapDreamRecord, type DreamRecordRow } from "@/lib/dream-db";
 import { requireUser } from "@/lib/auth/session";
+import { generateCurrentWeeklyReport } from "@/lib/weekly-report";
 
 export const runtime = "nodejs";
 
@@ -73,7 +74,14 @@ export async function POST(request: NextRequest) {
       returning id, emotion, dream_text, excerpt, symbols, coordinate_x, coordinate_y, interpretation_json, created_at
     `) as DreamRecordRow[];
 
-    return Response.json({ record: mapDreamRecord(rows[0]) });
+    let weeklyReport = null;
+    try {
+      weeklyReport = await generateCurrentWeeklyReport(user.id);
+    } catch (err) {
+      console.error("Refresh weekly report after record save error:", err);
+    }
+
+    return Response.json({ record: mapDreamRecord(rows[0]), weeklyReport });
   } catch (err) {
     if (err instanceof Response) return err;
     console.error("Save record error:", err);
